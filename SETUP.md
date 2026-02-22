@@ -1,73 +1,72 @@
-# AgentPay Setup Guide
+# Governor Backend Setup
 
-## Installing Go
+## Prerequisites
 
-You have two options to install Go on macOS:
+- Go 1.21+
+- Docker + Docker Compose
 
-### Option 1: Install via Homebrew (Recommended)
+## Install Go (macOS)
 
-First, fix Homebrew permissions:
-```bash
-sudo chown -R $(whoami) /opt/homebrew
-sudo chown -R $(whoami) /Users/$(whoami)/Library/Logs/Homebrew
-```
-
-Then install Go:
+Homebrew:
 ```bash
 brew install go
 ```
 
-### Option 2: Install via Official Go Installer
-
-1. Download Go from: https://go.dev/dl/
-2. Download the macOS installer (e.g., `go1.21.x.darwin-amd64.pkg`)
-3. Run the installer and follow the prompts
-4. Verify installation:
-   ```bash
-   go version
-   ```
-
-### Verify Go Installation
-
-After installation, verify it works:
+Verify:
 ```bash
 go version
 ```
 
-You should see something like: `go version go1.21.x darwin/arm64`
+## Project Setup
 
-## Setting Up the Project
+1. Start DB:
+```bash
+make db-up
+```
 
-Once Go is installed:
+2. Apply incremental migrations:
+```bash
+make migrate
+```
 
-1. **Start the database:**
-   ```bash
-   docker-compose up -d
-   ```
+3. Run API:
+```bash
+make backend
+```
 
-2. **Install Go dependencies:**
-   ```bash
-   cd backend
-   go mod download
-   ```
+## Default Environment
 
-3. **Run the backend:**
-   ```bash
-   export DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres DB_NAME=agentpay PORT=8080
-   go run cmd/api/main.go
-   ```
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=agentpay
+PORT=8080
+ADMIN_SESSION_TTL_HOURS=24
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_SUCCESS_URL=http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}
+STRIPE_CANCEL_URL=http://localhost:3000/checkout/cancel
+STRIPE_BASE_URL=
+```
 
-4. **In another terminal, set up and run the frontend:**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+## Seeded Admin (MVP scaffold)
+
+- Email: `admin@governor.local`
+- Password: `governor_admin_123`
+
+## Stripe Local Webhooks (Optional)
+
+```bash
+stripe listen --forward-to localhost:8080/webhooks/stripe
+```
 
 ## Troubleshooting
 
-- If `go` command is still not found after installation, you may need to restart your terminal or add Go to your PATH:
-  ```bash
-  export PATH=$PATH:/usr/local/go/bin
-  ```
-  Add this to your `~/.zshrc` to make it permanent.
+- If `go` is not found, install Go and restart your terminal.
+- If DB is stale, run:
+```bash
+make db-reset
+make migrate
+```

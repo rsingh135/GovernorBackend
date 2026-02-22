@@ -41,6 +41,8 @@ func SetupTestDB(t *testing.T) (*sql.DB, func()) {
 
 	// Clean all tables before test
 	cleanup := func() {
+		_, _ = db.Exec("TRUNCATE TABLE payment_webhook_events CASCADE")
+		_, _ = db.Exec("TRUNCATE TABLE admin_sessions CASCADE")
 		_, _ = db.Exec("TRUNCATE TABLE transactions CASCADE")
 		_, _ = db.Exec("TRUNCATE TABLE policies CASCADE")
 		_, _ = db.Exec("TRUNCATE TABLE agents CASCADE")
@@ -49,6 +51,8 @@ func SetupTestDB(t *testing.T) (*sql.DB, func()) {
 	}
 
 	// Clean tables before starting
+	_, _ = db.Exec("TRUNCATE TABLE payment_webhook_events CASCADE")
+	_, _ = db.Exec("TRUNCATE TABLE admin_sessions CASCADE")
 	_, _ = db.Exec("TRUNCATE TABLE transactions CASCADE")
 	_, _ = db.Exec("TRUNCATE TABLE policies CASCADE")
 	_, _ = db.Exec("TRUNCATE TABLE agents CASCADE")
@@ -114,8 +118,8 @@ func CreateTestTransaction(t *testing.T, db *sql.DB, txn *models.Transaction) {
 	t.Helper()
 
 	_, err := db.Exec(`
-		INSERT INTO transactions (id, request_id, agent_id, amount_cents, vendor, status, reason, meta, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, '{}'::jsonb, now())
+		INSERT INTO transactions (id, request_id, agent_id, amount_cents, currency, vendor, status, reason, meta, created_at)
+		VALUES ($1, $2, $3, $4, 'usd', $5, $6, $7, '{}'::jsonb, now())
 	`, uuid.New(), txn.RequestID, txn.AgentID, txn.AmountCents, txn.Vendor, txn.Status, txn.Reason)
 
 	if err != nil {
@@ -129,4 +133,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-

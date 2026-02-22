@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"agentpay/internal/models"
 
@@ -16,6 +18,8 @@ type TransactionRepository struct {
 	db *sql.DB
 }
 
+var ErrTransactionNotFound = errors.New("transaction not found")
+
 // NewTransactionRepository creates a new transaction repository.
 func NewTransactionRepository(db *sql.DB) *TransactionRepository {
 	return &TransactionRepository{db: db}
@@ -23,54 +27,56 @@ func NewTransactionRepository(db *sql.DB) *TransactionRepository {
 
 // GetByRequestID retrieves a transaction by request_id (for idempotency).
 func (r *TransactionRepository) GetByRequestID(ctx context.Context, requestID uuid.UUID) (*models.Transaction, error) {
-	txn := &models.Transaction{}
-	var metaBytes []byte
-
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason, meta, created_at
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		       meta, created_at
 		FROM transactions
 		WHERE request_id = $1
-	`, requestID).Scan(
-		&txn.ID,
-		&txn.RequestID,
-		&txn.AgentID,
-		&txn.AmountCents,
-		&txn.Currency,
-		&txn.Vendor,
-		&txn.Status,
-		&txn.Reason,
-		&metaBytes,
-		&txn.CreatedAt,
-	)
+	`, requestID)
 
-	if err == sql.ErrNoRows {
-		return nil, nil // Not found is OK for idempotency check
-	}
+	txn, err := scanTransactionRow(row)
 	if err != nil {
+		if errors.Is(err, ErrTransactionNotFound) {
+			return nil, nil // Not found is OK for idempotency check
+		}
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
-
-	if err := json.Unmarshal(metaBytes, &txn.Meta); err != nil {
-		txn.Meta = make(map[string]interface{})
-	}
-
 	return txn, nil
 }
 
 // Create creates a new transaction.
 // Must be called within a transaction context.
 func (r *TransactionRepository) Create(ctx context.Context, tx *sql.Tx, txn *models.Transaction) error {
+	if txn.ID == uuid.Nil {
+		txn.ID = uuid.New()
+	}
+
+	if txn.ProviderStatus == "" {
+		txn.ProviderStatus = "not_applicable"
+	}
+
 	metaBytes, err := json.Marshal(txn.Meta)
 	if err != nil {
 		return fmt.Errorf("failed to marshal meta: %w", err)
 	}
 
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO transactions (request_id, agent_id, amount_cents, currency, vendor, status, reason, meta, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, now())
+		INSERT INTO transactions (
+			id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+			provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+			meta, created_at
+		)
+		VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13,
+			$14::jsonb, now()
+		)
 		ON CONFLICT (request_id) DO NOTHING
 		RETURNING id, created_at
-	`, txn.RequestID, txn.AgentID, txn.AmountCents, txn.Currency, txn.Vendor, txn.Status, txn.Reason, metaBytes).Scan(
+	`, txn.ID, txn.RequestID, txn.AgentID, txn.AmountCents, txn.Currency, txn.Vendor, txn.Status, txn.Reason,
+		txn.Provider, nullableString(txn.ProviderSessionID), nullableString(txn.ProviderPaymentIntentID), txn.ProviderStatus, nullableString(txn.ProviderCheckoutURL),
+		metaBytes).Scan(
 		&txn.ID,
 		&txn.CreatedAt,
 	)
@@ -88,32 +94,18 @@ func (r *TransactionRepository) Create(ctx context.Context, tx *sql.Tx, txn *mod
 
 // getByRequestIDInTx retrieves a transaction by request_id within a transaction.
 func (r *TransactionRepository) getByRequestIDInTx(ctx context.Context, tx *sql.Tx, txn *models.Transaction) error {
-	var metaBytes []byte
-
-	err := tx.QueryRowContext(ctx, `
-		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason, meta, created_at
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		       meta, created_at
 		FROM transactions
 		WHERE request_id = $1
-	`, txn.RequestID).Scan(
-		&txn.ID,
-		&txn.RequestID,
-		&txn.AgentID,
-		&txn.AmountCents,
-		&txn.Currency,
-		&txn.Vendor,
-		&txn.Status,
-		&txn.Reason,
-		&metaBytes,
-		&txn.CreatedAt,
-	)
-
+	`, txn.RequestID)
+	existingTxn, err := scanTransactionRow(row)
 	if err != nil {
 		return fmt.Errorf("failed to get existing transaction: %w", err)
 	}
-
-	if err := json.Unmarshal(metaBytes, &txn.Meta); err != nil {
-		txn.Meta = make(map[string]interface{})
-	}
+	*txn = *existingTxn
 
 	return nil
 }
@@ -137,4 +129,246 @@ func (r *TransactionRepository) GetTodaySpendForAgent(ctx context.Context, tx *s
 	}
 
 	return totalSpent, nil
+}
+
+// GetByID retrieves a transaction by ID.
+func (r *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		       meta, created_at
+		FROM transactions
+		WHERE id = $1
+	`, id)
+	return scanTransactionRow(row)
+}
+
+// GetByIDForUpdate retrieves and locks a transaction row by ID inside a transaction.
+func (r *TransactionRepository) GetByIDForUpdate(ctx context.Context, tx *sql.Tx, id uuid.UUID) (*models.Transaction, error) {
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		       meta, created_at
+		FROM transactions
+		WHERE id = $1
+		FOR UPDATE
+	`, id)
+	return scanTransactionRow(row)
+}
+
+// UpdateStatus updates a transaction status/reason and returns the updated record.
+func (r *TransactionRepository) UpdateStatus(ctx context.Context, tx *sql.Tx, id uuid.UUID, status, reason string) (*models.Transaction, error) {
+	row := tx.QueryRowContext(ctx, `
+		UPDATE transactions
+		SET status = $2, reason = $3
+		WHERE id = $1
+		RETURNING id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		          provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		          meta, created_at
+	`, id, status, reason)
+	return scanTransactionRow(row)
+}
+
+// UpdateStatusAndPayment updates a transaction decision and provider checkout fields in one statement.
+func (r *TransactionRepository) UpdateStatusAndPayment(
+	ctx context.Context,
+	tx *sql.Tx,
+	id uuid.UUID,
+	status string,
+	reason string,
+	provider string,
+	sessionID string,
+	paymentIntentID string,
+	providerStatus string,
+	checkoutURL string,
+) (*models.Transaction, error) {
+	row := tx.QueryRowContext(ctx, `
+		UPDATE transactions
+		SET status = $2,
+		    reason = $3,
+		    provider = NULLIF($4, ''),
+		    provider_session_id = NULLIF($5, ''),
+		    provider_payment_intent_id = NULLIF($6, ''),
+		    provider_status = $7,
+		    provider_checkout_url = NULLIF($8, '')
+		WHERE id = $1
+		RETURNING id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		          provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		          meta, created_at
+	`, id, status, reason, provider, sessionID, paymentIntentID, providerStatus, checkoutURL)
+	return scanTransactionRow(row)
+}
+
+// ListByAgent retrieves recent transactions for an agent.
+func (r *TransactionRepository) ListByAgent(ctx context.Context, agentID uuid.UUID, limit int) ([]models.Transaction, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		       meta, created_at
+		FROM transactions
+		WHERE agent_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, agentID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list transactions by agent: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
+}
+
+// List retrieves recent transactions, optionally filtered by agent.
+func (r *TransactionRepository) List(ctx context.Context, agentID *uuid.UUID, limit int) ([]models.Transaction, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if agentID != nil {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+			       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+			       meta, created_at
+			FROM transactions
+			WHERE agent_id = $1
+			ORDER BY created_at DESC
+			LIMIT $2
+		`, *agentID, limit)
+	} else {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+			       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+			       meta, created_at
+			FROM transactions
+			ORDER BY created_at DESC
+			LIMIT $1
+		`, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list transactions: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
+}
+
+// ListPending retrieves pending approval transactions.
+func (r *TransactionRepository) ListPending(ctx context.Context, limit int) ([]models.Transaction, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason,
+		       provider, provider_session_id, provider_payment_intent_id, provider_status, provider_checkout_url,
+		       meta, created_at
+		FROM transactions
+		WHERE status = 'PENDING_APPROVAL'
+		ORDER BY created_at ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pending transactions: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTransactions(rows)
+}
+
+// UpdatePaymentState updates provider execution fields for a transaction.
+func (r *TransactionRepository) UpdatePaymentState(
+	ctx context.Context,
+	txnID uuid.UUID,
+	sessionID string,
+	paymentIntentID string,
+	providerStatus string,
+) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE transactions
+		SET provider_session_id = COALESCE(NULLIF($2, ''), provider_session_id),
+		    provider_payment_intent_id = COALESCE(NULLIF($3, ''), provider_payment_intent_id),
+		    provider_status = COALESCE(NULLIF($4, ''), provider_status)
+		WHERE id = $1
+	`, txnID, sessionID, paymentIntentID, providerStatus)
+	if err != nil {
+		return fmt.Errorf("failed to update payment state: %w", err)
+	}
+	return nil
+}
+
+func scanTransactions(rows *sql.Rows) ([]models.Transaction, error) {
+	txs := make([]models.Transaction, 0)
+	for rows.Next() {
+		tx, err := scanTransactionRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, *tx)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating transactions: %w", err)
+	}
+	return txs, nil
+}
+
+type scanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanTransactionRow(s scanner) (*models.Transaction, error) {
+	txn := &models.Transaction{}
+	var metaBytes []byte
+	var provider sql.NullString
+	var providerSessionID sql.NullString
+	var providerPaymentIntentID sql.NullString
+	var providerStatus sql.NullString
+	var providerCheckoutURL sql.NullString
+	err := s.Scan(
+		&txn.ID,
+		&txn.RequestID,
+		&txn.AgentID,
+		&txn.AmountCents,
+		&txn.Currency,
+		&txn.Vendor,
+		&txn.Status,
+		&txn.Reason,
+		&provider,
+		&providerSessionID,
+		&providerPaymentIntentID,
+		&providerStatus,
+		&providerCheckoutURL,
+		&metaBytes,
+		&txn.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, ErrTransactionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan transaction: %w", err)
+	}
+	if err := json.Unmarshal(metaBytes, &txn.Meta); err != nil {
+		txn.Meta = make(map[string]interface{})
+	}
+	txn.Provider = provider.String
+	txn.ProviderSessionID = providerSessionID.String
+	txn.ProviderPaymentIntentID = providerPaymentIntentID.String
+	txn.ProviderStatus = providerStatus.String
+	txn.ProviderCheckoutURL = providerCheckoutURL.String
+	return txn, nil
+}
+
+func nullableString(s string) interface{} {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
 }

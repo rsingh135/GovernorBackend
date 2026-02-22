@@ -1,150 +1,111 @@
-# AgentPay MVP
+# Governor Backend
 
-Programmable Wallets for AI - A middleware API that governs financial transactions for AI agents.
+Governed spending API for AI agents. This repository currently contains the Go backend + Postgres migrations.
 
-## Tech Stack
+## Current Status
 
-- **Backend**: Go (standard `net/http`, `database/sql`, `lib/pq`)
-- **Frontend**: React (Vite, TypeScript, TailwindCSS)
-- **Database**: PostgreSQL
+Implemented API routes:
+- `POST /users`
+- `POST /agents`
+- `POST /policies`
+- `POST /spend` (agent-authenticated)
+- `POST /admin/login`
+- `GET /admin/me` (admin-authenticated)
+- `GET /admin/users`, `GET /admin/users/{id}` (admin-authenticated)
+- `GET /admin/agents`, `GET /admin/agents/{id}`, `GET /admin/agents/{id}/history?limit=10` (admin-authenticated)
+- `GET /admin/policies?agent_id={id}` (admin-authenticated)
+- `GET /admin/transactions`, `GET /admin/transactions/{id}` (admin-authenticated)
+- `GET /admin/transactions/pending` (admin-authenticated)
+- `POST /admin/transactions/{id}/approve`, `POST /admin/transactions/{id}/deny` (admin-authenticated)
+- `POST /webhooks/stripe`
+- `GET /health`
 
-## Core Principles
-
-1. **NO FLOAT MATH**: All financial values are integers representing cents (e.g., $10.00 = 1000)
-2. **Type Safety**: Strict typing across Go and TypeScript
-3. **Simplicity**: Clean, modular code without over-engineering
-4. **Security**: No hardcoded secrets
-
-## Quick Start
-
-### Prerequisites
+## Prerequisites
 
 - Go 1.21+
-- Node.js 18+
-- Docker & Docker Compose (for database)
+- Docker + Docker Compose
 
-### Setup
+## Local Setup
 
-1. **Start the database:**
-   ```bash
-   docker-compose up -d
-   ```
+1. Start Postgres:
+```bash
+make db-up
+```
 
-2. **Set up the backend:**
-   ```bash
-   cd backend
-   go mod download
-   ```
+2. Apply incremental migrations:
+```bash
+make migrate
+```
 
-3. **Set up the frontend:**
-   ```bash
-   cd frontend
-   npm install
-   ```
+3. Set env vars (or use defaults shown in `.env.example`):
+```bash
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+export DB_NAME=agentpay
+export PORT=8080
+export ADMIN_SESSION_TTL_HOURS=24
+export STRIPE_SECRET_KEY=
+export STRIPE_WEBHOOK_SECRET=
+export STRIPE_SUCCESS_URL=http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}
+export STRIPE_CANCEL_URL=http://localhost:3000/checkout/cancel
+```
 
-4. **Run the backend:**
-   ```bash
-   cd backend
-   export DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres DB_NAME=agentpay PORT=8080
-   go run cmd/api/main.go
-   ```
+4. Start API:
+```bash
+make backend
+```
 
-5. **Run the frontend:**
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-
-The frontend will be available at `http://localhost:3000` and the API at `http://localhost:8080`.
-
-## API Endpoints
-
-### Public Endpoints
-
-- `GET /api/users` - List all users
-- `GET /api/users/{id}` - Get user by ID
-- `POST /api/agents` - Create a new agent
-- `GET /api/agents?user_id={id}` - List agents for a user
-
-### Protected Endpoints (Require API Key)
-
-- `POST /api/transactions` - Create a transaction
-  - Headers: `Authorization: Bearer {api_key}`
-  - Body: `{ "amount_cents": 1000, "vendor": "Example Vendor" }`
-- `GET /api/transactions` - List transactions for authenticated agent
-  - Headers: `Authorization: Bearer {api_key}`
-
-## Database Schema
-
-- **users**: Human users with balances
-- **agents**: AI agents with daily spending limits
-- **transactions**: Financial transactions with approval/decline status
-
-See `migrations/001_initial_schema.sql` for the full schema.
-
-## Environment Variables
-
-### Backend
-
-- `DB_HOST` - Database host (default: localhost)
-- `DB_PORT` - Database port (default: 5432)
-- `DB_USER` - Database user (default: postgres)
-- `DB_PASSWORD` - Database password (default: postgres)
-- `DB_NAME` - Database name (default: agentpay)
-- `PORT` - API server port (default: 8080)
-
-### Frontend
-
-- `VITE_API_URL` - API base URL (default: /api)
-
-## Example Usage
-
-### Create an Agent
+## Test Setup
 
 ```bash
-curl -X POST http://localhost:8080/api/agents \
+make db-test-setup
+make test
+```
+
+Note: test execution requires Go installed on your machine.
+
+## Seeded Admin (MVP Scaffold)
+
+Migration `003_add_admin_auth.sql` seeds:
+- Email: `admin@governor.local`
+- Password: `governor_admin_123`
+
+Login example:
+```bash
+curl -X POST http://localhost:8080/admin/login \
   -H "Content-Type: application/json" \
+  -d '{"email":"admin@governor.local","password":"governor_admin_123"}'
+```
+
+Then call `/admin/me`:
+```bash
+curl http://localhost:8080/admin/me \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+## Agent Auth for Spend
+
+`POST /spend` uses `apiKey` (or `X-API-Key`) header.
+
+```bash
+curl -X POST http://localhost:8080/spend \
+  -H "Content-Type: application/json" \
+  -H "apiKey: sk_test_agent_123" \
   -d '{
-    "user_id": "11111111-1111-1111-1111-111111111111",
-    "name": "MyAgent",
-    "daily_limit_cents": 5000
+    "request_id": "550e8400-e29b-41d4-a716-446655440000",
+    "amount": 500,
+    "vendor": "openai.com",
+    "meta": {}
   }'
 ```
 
-### Create a Transaction
+If `STRIPE_SECRET_KEY` is set, approved transactions include `checkout_url` and `provider_status`.
 
+## Stripe Webhook (Local)
+
+Forward Stripe events to local API:
 ```bash
-curl -X POST http://localhost:8080/api/transactions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk_test_agent_123" \
-  -d '{
-    "amount_cents": 500,
-    "vendor": "Coffee Shop"
-  }'
-```
-
-## Project Structure
-
-```
-GovernorApp/
-├── backend/
-│   ├── cmd/
-│   │   └── api/
-│   │       └── main.go
-│   ├── internal/
-│   │   ├── handlers/    # HTTP handlers
-│   │   ├── models/      # Data models
-│   │   ├── db/          # Database connection
-│   │   └── middleware/  # Auth middleware
-│   └── go.mod
-├── frontend/
-│   ├── src/
-│   │   ├── components/  # React components
-│   │   ├── pages/       # Page components
-│   │   ├── types/       # TypeScript types
-│   │   └── utils/       # Utility functions
-│   └── package.json
-├── migrations/
-│   └── 001_initial_schema.sql
-└── docker-compose.yml
+stripe listen --forward-to localhost:8080/webhooks/stripe
 ```

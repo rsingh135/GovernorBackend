@@ -7,3 +7,12 @@ main
 # Environment variables
 .env
 
+# Node (local tooling)
+node_modules/
+npm-debug.log*
+package.json
+package-lock.json
+
+# Go test/build artifacts
+coverage.out
+coverage.html

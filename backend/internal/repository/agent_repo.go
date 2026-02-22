@@ -143,3 +143,78 @@ func (r *AgentRepository) LockAgentForUpdate(ctx context.Context, tx *sql.Tx, ag
 
 	return status, nil
 }
+
+// GetByIDForUpdate retrieves and locks an agent row within a transaction.
+func (r *AgentRepository) GetByIDForUpdate(ctx context.Context, tx *sql.Tx, agentID uuid.UUID) (*models.Agent, error) {
+	agent := &models.Agent{}
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, user_id, name, status, api_key_prefix, created_at
+		FROM agents
+		WHERE id = $1
+		FOR UPDATE
+	`, agentID).Scan(
+		&agent.ID,
+		&agent.UserID,
+		&agent.Name,
+		&agent.Status,
+		&agent.APIKeyPrefix,
+		&agent.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock agent: %w", err)
+	}
+
+	return agent, nil
+}
+
+// List retrieves agents, optionally filtered by user ID.
+func (r *AgentRepository) List(ctx context.Context, userID *uuid.UUID, limit int) ([]models.Agent, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if userID != nil {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT id, user_id, name, status, api_key_prefix, created_at
+			FROM agents
+			WHERE user_id = $1
+			ORDER BY created_at DESC
+			LIMIT $2
+		`, *userID, limit)
+	} else {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT id, user_id, name, status, api_key_prefix, created_at
+			FROM agents
+			ORDER BY created_at DESC
+			LIMIT $1
+		`, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+	defer rows.Close()
+
+	agents := make([]models.Agent, 0, limit)
+	for rows.Next() {
+		var agent models.Agent
+		if err := rows.Scan(&agent.ID, &agent.UserID, &agent.Name, &agent.Status, &agent.APIKeyPrefix, &agent.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan agent: %w", err)
+		}
+		agents = append(agents, agent)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating agents: %w", err)
+	}
+
+	return agents, nil
+}

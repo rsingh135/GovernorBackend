@@ -122,3 +122,36 @@ func (r *UserRepository) DeductBalance(ctx context.Context, tx *sql.Tx, userID u
 
 	return nil
 }
+
+// List retrieves users ordered by creation time descending.
+func (r *UserRepository) List(ctx context.Context, limit int) ([]models.User, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, name, balance_cents, created_at, updated_at
+		FROM users
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]models.User, 0, limit)
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(&user.ID, &user.Name, &user.BalanceCents, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating users: %w", err)
+	}
+
+	return users, nil
+}

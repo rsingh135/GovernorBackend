@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"agentpay/internal/models"
+	"agentpay/internal/payments"
 	"agentpay/internal/repository"
 
 	"github.com/google/uuid"
@@ -15,21 +16,32 @@ import (
 
 // SpendService handles the core spending engine logic.
 type SpendService struct {
-	db          *sql.DB
-	userRepo    *repository.UserRepository
-	agentRepo   *repository.AgentRepository
-	policyRepo  *repository.PolicyRepository
-	txnRepo     *repository.TransactionRepository
+	db         *sql.DB
+	userRepo   *repository.UserRepository
+	agentRepo  *repository.AgentRepository
+	policyRepo *repository.PolicyRepository
+	txnRepo    *repository.TransactionRepository
+	payments   payments.Provider
 }
 
 // NewSpendService creates a new spend service.
 func NewSpendService(db *sql.DB) *SpendService {
+	return NewSpendServiceWithProvider(db, payments.NewNoopProvider())
+}
+
+// NewSpendServiceWithProvider creates a new spend service with a payment provider.
+func NewSpendServiceWithProvider(db *sql.DB, provider payments.Provider) *SpendService {
+	if provider == nil {
+		provider = payments.NewNoopProvider()
+	}
+
 	return &SpendService{
 		db:         db,
 		userRepo:   repository.NewUserRepository(db),
 		agentRepo:  repository.NewAgentRepository(db),
 		policyRepo: repository.NewPolicyRepository(db),
 		txnRepo:    repository.NewTransactionRepository(db),
+		payments:   provider,
 	}
 }
 
@@ -147,14 +159,49 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 
 	// Create transaction
 	txn := &models.Transaction{
-		RequestID:   req.RequestID,
-		AgentID:     agent.ID,
-		AmountCents: req.Amount,
-		Currency:    "usd", // Default currency
-		Vendor:      req.Vendor,
-		Status:      status,
-		Reason:      reason,
-		Meta:        req.Meta,
+		ID:             uuid.New(),
+		RequestID:      req.RequestID,
+		AgentID:        agent.ID,
+		AmountCents:    req.Amount,
+		Currency:       "usd", // Default currency
+		Vendor:         req.Vendor,
+		Status:         status,
+		Reason:         reason,
+		Meta:           req.Meta,
+		ProviderStatus: "not_applicable",
+	}
+
+	if status == "PENDING_APPROVAL" {
+		txn.ProviderStatus = "awaiting_human_approval"
+	}
+
+	// For auto-approved flows, create a checkout session before persisting approval.
+	// This keeps balance and transaction state consistent if checkout creation fails.
+	if status == "APPROVED" && s.payments.Enabled() {
+		checkout, err := s.payments.CreateCheckoutSession(txCtx, payments.CreateCheckoutRequest{
+			TransactionID: txn.ID,
+			AgentID:       agent.ID,
+			AmountCents:   req.Amount,
+			Currency:      txn.Currency,
+			Vendor:        req.Vendor,
+		})
+		if err != nil {
+			deniedTxn := s.createDeniedTransaction(agent.ID, req, "checkout_creation_failed")
+			deniedTxn.ID = txn.ID
+			deniedTxn.Provider = s.payments.Name()
+			deniedTxn.ProviderStatus = "checkout_creation_failed"
+			if err := s.txnRepo.Create(txCtx, tx, deniedTxn); err != nil {
+				return nil, err
+			}
+			_ = tx.Commit()
+			return s.transactionToResponse(deniedTxn), nil
+		}
+
+		txn.Provider = checkout.Provider
+		txn.ProviderSessionID = checkout.SessionID
+		txn.ProviderPaymentIntentID = checkout.PaymentIntentID
+		txn.ProviderCheckoutURL = checkout.CheckoutURL
+		txn.ProviderStatus = checkout.ProviderStatus
 	}
 
 	if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
@@ -195,8 +242,11 @@ func (s *SpendService) transactionToResponse(txn *models.Transaction) *models.Sp
 	// Convert DB status (uppercase) to API status (lowercase)
 	status := strings.ToLower(strings.ReplaceAll(txn.Status, "_", "_"))
 	return &models.SpendResponse{
-		Status: status,
-		Reason: txn.Reason,
+		Status:         status,
+		Reason:         txn.Reason,
+		CheckoutURL:    txn.ProviderCheckoutURL,
+		ProviderStatus: txn.ProviderStatus,
+		TransactionID:  txn.ID.String(),
 	}
 }
 

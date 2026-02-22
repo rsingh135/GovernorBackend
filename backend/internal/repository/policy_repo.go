@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"agentpay/internal/models"
@@ -23,15 +24,25 @@ func NewPolicyRepository(db *sql.DB) *PolicyRepository {
 
 // Upsert creates or updates a policy for an agent.
 func (r *PolicyRepository) Upsert(ctx context.Context, req *models.UpsertPolicyRequest) (*models.Policy, error) {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO policies (agent_id, daily_limit_cents, allowed_vendors, require_approval_above_cents, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, now(), now())
+	rawPolicy, err := json.Marshal(map[string]interface{}{
+		"daily_limit_cents":            req.DailyLimitCents,
+		"allowed_vendors":              req.AllowedVendors,
+		"require_approval_above_cents": req.RequireApprovalAboveCents,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal raw policy: %w", err)
+	}
+
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO policies (agent_id, daily_limit_cents, allowed_vendors, require_approval_above_cents, raw_policy, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, now(), now())
 		ON CONFLICT (agent_id) DO UPDATE SET
 			daily_limit_cents = EXCLUDED.daily_limit_cents,
 			allowed_vendors = EXCLUDED.allowed_vendors,
 			require_approval_above_cents = EXCLUDED.require_approval_above_cents,
+			raw_policy = EXCLUDED.raw_policy,
 			updated_at = now()
-	`, req.AgentID, req.DailyLimitCents, pq.Array(req.AllowedVendors), req.RequireApprovalAboveCents)
+	`, req.AgentID, req.DailyLimitCents, pq.Array(req.AllowedVendors), req.RequireApprovalAboveCents, rawPolicy)
 
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23503" {
