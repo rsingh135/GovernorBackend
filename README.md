@@ -1,8 +1,12 @@
-# Governor Backend
+# Governor Platform (Local MVP)
 
-Governed spending API for AI agents. This repository currently contains the Go backend + Postgres migrations.
+Governed spending platform for AI agents with a Go backend, Postgres, and a React control-plane dashboard.
 
 ## Current Status
+
+Implemented frontend:
+- `frontend/` React + TypeScript control plane
+- Admin login, spend simulation, pending approvals queue, and agent history view
 
 Implemented API routes:
 - `POST /users`
@@ -17,12 +21,14 @@ Implemented API routes:
 - `GET /admin/transactions`, `GET /admin/transactions/{id}` (admin-authenticated)
 - `GET /admin/transactions/pending` (admin-authenticated)
 - `POST /admin/transactions/{id}/approve`, `POST /admin/transactions/{id}/deny` (admin-authenticated)
+- `GET /admin/audit/approvals` (admin-authenticated)
 - `POST /webhooks/stripe`
 - `GET /health`
 
 ## Prerequisites
 
 - Go 1.21+
+- Node.js 20+
 - Docker + Docker Compose
 
 ## Local Setup
@@ -46,16 +52,29 @@ export DB_PASSWORD=postgres
 export DB_NAME=agentpay
 export PORT=8080
 export ADMIN_SESSION_TTL_HOURS=24
+export ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE=20
+export ADMIN_REVIEW_RATE_LIMIT_PER_MINUTE=60
+export SPEND_RATE_LIMIT_PER_MINUTE=120
 export STRIPE_SECRET_KEY=
 export STRIPE_WEBHOOK_SECRET=
-export STRIPE_SUCCESS_URL=http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}
-export STRIPE_CANCEL_URL=http://localhost:3000/checkout/cancel
+export STRIPE_SUCCESS_URL=http://localhost:5173/checkout/success?session_id={CHECKOUT_SESSION_ID}
+export STRIPE_CANCEL_URL=http://localhost:5173/checkout/cancel
 ```
 
 4. Start API:
 ```bash
 make backend
 ```
+
+5. Start dashboard UI:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Dashboard URL: `http://localhost:5173`  
+API URL: `http://localhost:8080` (proxied as `/api` from the frontend in dev)
 
 ## Test Setup
 
@@ -102,6 +121,13 @@ curl -X POST http://localhost:8080/spend \
 ```
 
 If `STRIPE_SECRET_KEY` is set, approved transactions include `checkout_url` and `provider_status`.
+
+## Phase 4 Hardening
+
+- Every response includes `X-Request-Id`.
+- Structured request logs are emitted by the backend.
+- In-memory rate limits are active on sensitive endpoints (`/admin/login`, `/spend`, and admin approve/deny actions).
+- Human approval actions are persisted in `approval_audit_logs`.
 
 ## Stripe Webhook (Local)
 

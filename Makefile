@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-reset migrate db-test-setup backend test test-verbose
+.PHONY: help db-up db-down db-reset migrate db-test-setup backend frontend frontend-build test test-verbose
 
 help:
 	@echo "Available commands:"
@@ -8,6 +8,8 @@ help:
 	@echo "  make migrate       - Apply all migrations to main database"
 	@echo "  make db-test-setup - Create test database"
 	@echo "  make backend       - Run Go backend server"
+	@echo "  make frontend      - Run frontend dev server"
+	@echo "  make frontend-build - Build frontend production bundle"
 	@echo "  make test          - Run test suite"
 	@echo "  make test-verbose  - Run test suite with verbose output"
 
@@ -29,6 +31,7 @@ migrate:
 	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/002_add_users_table.sql
 	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/003_add_admin_auth.sql
 	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/004_add_payment_provider_fields.sql
+	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/005_add_approval_audit_logs.sql
 	@echo "Main database incremental migrations applied successfully!"
 
 db-test-setup:
@@ -38,10 +41,17 @@ db-test-setup:
 	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/002_add_users_table.sql
 	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/003_add_admin_auth.sql
 	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/004_add_payment_provider_fields.sql
+	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/005_add_approval_audit_logs.sql
 	@echo "Test database created and migrated successfully!"
 
 backend:
 	cd backend && go run cmd/server/main.go
+
+frontend:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
 
 test:
 	cd backend && DB_NAME_TEST=agentpay_test go test ./... -v

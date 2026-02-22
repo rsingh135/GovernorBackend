@@ -41,6 +41,7 @@ func SetupTestDB(t *testing.T) (*sql.DB, func()) {
 
 	// Clean all tables before test
 	cleanup := func() {
+		_, _ = db.Exec("TRUNCATE TABLE approval_audit_logs CASCADE")
 		_, _ = db.Exec("TRUNCATE TABLE payment_webhook_events CASCADE")
 		_, _ = db.Exec("TRUNCATE TABLE admin_sessions CASCADE")
 		_, _ = db.Exec("TRUNCATE TABLE transactions CASCADE")
@@ -51,6 +52,7 @@ func SetupTestDB(t *testing.T) (*sql.DB, func()) {
 	}
 
 	// Clean tables before starting
+	_, _ = db.Exec("TRUNCATE TABLE approval_audit_logs CASCADE")
 	_, _ = db.Exec("TRUNCATE TABLE payment_webhook_events CASCADE")
 	_, _ = db.Exec("TRUNCATE TABLE admin_sessions CASCADE")
 	_, _ = db.Exec("TRUNCATE TABLE transactions CASCADE")

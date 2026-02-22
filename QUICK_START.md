@@ -1,4 +1,4 @@
-# Governor Backend Quick Start
+# Governor MVP Quick Start
 
 ## 1. Start Database
 
@@ -27,13 +27,23 @@ make backend
 
 Server: `http://localhost:8080`
 
-## 5. Verify Health
+## 5. Start Dashboard
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Dashboard: `http://localhost:5173`
+
+## 6. Verify API Health
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-## 6. Seeded Admin Login (MVP Scaffold)
+## 7. Seeded Admin Login (MVP Scaffold)
 
 ```bash
 curl -X POST http://localhost:8080/admin/login \
@@ -47,7 +57,7 @@ curl http://localhost:8080/admin/transactions/pending \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-## 7. Optional Stripe Test Mode
+## 8. Optional Stripe Test Mode
 
 Set Stripe env vars before `make backend`:
 ```bash
@@ -60,6 +70,13 @@ Forward webhooks:
 stripe listen --forward-to localhost:8080/webhooks/stripe
 ```
 
+## 9. Approval Audit Log Check
+
+```bash
+curl http://localhost:8080/admin/audit/approvals \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
 ## Available Make Commands
 
 ```bash
@@ -69,6 +86,8 @@ make db-reset
 make migrate
 make db-test-setup
 make backend
+make frontend
+make frontend-build
 make test
 make test-verbose
 ```

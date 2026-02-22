@@ -33,6 +33,11 @@ func main() {
 
 	authMiddleware := middleware.NewAuthMiddleware(agentService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(adminAuthService)
+	requestIDMiddleware := middleware.NewRequestIDMiddleware()
+	loggingMiddleware := middleware.NewLoggingMiddleware()
+	loginRateLimiter := middleware.NewRateLimiterMiddleware(getEnvInt("ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE", 20), time.Minute)
+	spendRateLimiter := middleware.NewRateLimiterMiddleware(getEnvInt("SPEND_RATE_LIMIT_PER_MINUTE", 120), time.Minute)
+	reviewRateLimiter := middleware.NewRateLimiterMiddleware(getEnvInt("ADMIN_REVIEW_RATE_LIMIT_PER_MINUTE", 60), time.Minute)
 
 	userHandler := handlers.NewUserHandler(userService)
 	agentHandler := handlers.NewAgentHandler(agentService)
@@ -71,7 +76,7 @@ func main() {
 
 	mux.HandleFunc("/spend", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			authMiddleware.Authenticate(spendHandler.Spend)(w, r)
+			spendRateLimiter.Limit(authMiddleware.Authenticate(spendHandler.Spend))(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -79,7 +84,7 @@ func main() {
 
 	mux.HandleFunc("/admin/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			adminAuthHandler.Login(w, r)
+			loginRateLimiter.Limit(adminAuthHandler.Login)(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -159,17 +164,25 @@ func main() {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetTransaction)(w, r)
 		case http.MethodPost:
 			if strings.HasSuffix(r.URL.Path, "/approve") {
-				adminAuthMiddleware.Authenticate(adminDashboardHandler.ApproveTransaction)(w, r)
+				reviewRateLimiter.Limit(adminAuthMiddleware.Authenticate(adminDashboardHandler.ApproveTransaction))(w, r)
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/deny") {
-				adminAuthMiddleware.Authenticate(adminDashboardHandler.DenyTransaction)(w, r)
+				reviewRateLimiter.Limit(adminAuthMiddleware.Authenticate(adminDashboardHandler.DenyTransaction))(w, r)
 				return
 			}
 			http.Error(w, "Not found", http.StatusNotFound)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+
+	mux.HandleFunc("/admin/audit/approvals", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			adminAuthMiddleware.Authenticate(adminDashboardHandler.ListApprovalAuditLogs)(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
 	mux.HandleFunc("/webhooks/stripe", func(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +200,8 @@ func main() {
 
 	port := getEnv("PORT", "8080")
 	log.Printf("Governor API server starting on port %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	rootHandler := requestIDMiddleware.AddRequestID(loggingMiddleware.Log(mux))
+	if err := http.ListenAndServe(":"+port, rootHandler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
@@ -208,14 +222,26 @@ func getAdminSessionTTLHours() time.Duration {
 	return time.Duration(hours) * time.Hour
 }
 
+func getEnvInt(key string, defaultValue int) int {
+	raw := strings.TrimSpace(getEnv(key, ""))
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return defaultValue
+	}
+	return value
+}
+
 func buildPaymentProvider() payments.Provider {
 	stripeSecret := strings.TrimSpace(os.Getenv("STRIPE_SECRET_KEY"))
 	if stripeSecret == "" {
 		return payments.NewNoopProvider()
 	}
 
-	successURL := getEnv("STRIPE_SUCCESS_URL", "http://localhost:3000/checkout/success?session_id={CHECKOUT_SESSION_ID}")
-	cancelURL := getEnv("STRIPE_CANCEL_URL", "http://localhost:3000/checkout/cancel")
+	successURL := getEnv("STRIPE_SUCCESS_URL", "http://localhost:5173/checkout/success?session_id={CHECKOUT_SESSION_ID}")
+	cancelURL := getEnv("STRIPE_CANCEL_URL", "http://localhost:5173/checkout/cancel")
 
 	return payments.NewStripeProvider(payments.StripeConfig{
 		SecretKey:     stripeSecret,

@@ -20,6 +20,7 @@ type AdminDashboardService struct {
 	agentRepo  *repository.AgentRepository
 	policyRepo *repository.PolicyRepository
 	txnRepo    *repository.TransactionRepository
+	auditRepo  *repository.AuditRepository
 	payments   payments.Provider
 }
 
@@ -40,6 +41,7 @@ func NewAdminDashboardServiceWithProvider(db *sql.DB, provider payments.Provider
 		agentRepo:  repository.NewAgentRepository(db),
 		policyRepo: repository.NewPolicyRepository(db),
 		txnRepo:    repository.NewTransactionRepository(db),
+		auditRepo:  repository.NewAuditRepository(db),
 		payments:   provider,
 	}
 }
@@ -83,8 +85,16 @@ func (s *AdminDashboardService) GetAgentHistory(ctx context.Context, agentID uui
 	return s.txnRepo.ListByAgent(ctx, agentID, limit)
 }
 
+func (s *AdminDashboardService) ListApprovalAuditLogs(ctx context.Context, limit int) ([]models.ApprovalAuditLog, error) {
+	return s.auditRepo.ListApprovalLogs(ctx, limit)
+}
+
 // ApprovePendingTransaction approves a pending transaction and deducts user balance atomically.
-func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, txnID uuid.UUID) (*models.Transaction, error) {
+func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, txnID uuid.UUID, adminID uuid.UUID, requestID string) (*models.Transaction, error) {
+	if adminID == uuid.Nil {
+		return nil, fmt.Errorf("admin id is required")
+	}
+
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -113,6 +123,17 @@ func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, t
 		if uErr != nil {
 			return nil, uErr
 		}
+		if err := s.auditRepo.CreateApprovalLog(ctx, tx, &models.CreateApprovalAuditLogRequest{
+			TransactionID:  txn.ID,
+			AdminID:        adminID,
+			Action:         "approve",
+			PreviousStatus: txn.Status,
+			NewStatus:      updated.Status,
+			Reason:         updated.Reason,
+			RequestID:      requestID,
+		}); err != nil {
+			return nil, err
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("failed to commit denied transaction: %w", err)
 		}
@@ -127,6 +148,17 @@ func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, t
 			updated, uErr := s.txnRepo.UpdateStatus(ctx, tx, txn.ID, "DENIED", "insufficient_balance")
 			if uErr != nil {
 				return nil, uErr
+			}
+			if err := s.auditRepo.CreateApprovalLog(ctx, tx, &models.CreateApprovalAuditLogRequest{
+				TransactionID:  txn.ID,
+				AdminID:        adminID,
+				Action:         "approve",
+				PreviousStatus: txn.Status,
+				NewStatus:      updated.Status,
+				Reason:         updated.Reason,
+				RequestID:      requestID,
+			}); err != nil {
+				return nil, err
 			}
 			if err := tx.Commit(); err != nil {
 				return nil, fmt.Errorf("failed to commit denied transaction: %w", err)
@@ -157,6 +189,17 @@ func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, t
 			if err != nil {
 				return nil, err
 			}
+			if err := s.auditRepo.CreateApprovalLog(ctx, tx, &models.CreateApprovalAuditLogRequest{
+				TransactionID:  txn.ID,
+				AdminID:        adminID,
+				Action:         "approve",
+				PreviousStatus: txn.Status,
+				NewStatus:      updated.Status,
+				Reason:         updated.Reason,
+				RequestID:      requestID,
+			}); err != nil {
+				return nil, err
+			}
 			if err := tx.Commit(); err != nil {
 				return nil, fmt.Errorf("failed to commit denied transaction: %w", err)
 			}
@@ -179,6 +222,18 @@ func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, t
 		return nil, err
 	}
 
+	if err := s.auditRepo.CreateApprovalLog(ctx, tx, &models.CreateApprovalAuditLogRequest{
+		TransactionID:  txn.ID,
+		AdminID:        adminID,
+		Action:         "approve",
+		PreviousStatus: txn.Status,
+		NewStatus:      updated.Status,
+		Reason:         updated.Reason,
+		RequestID:      requestID,
+	}); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit approved transaction: %w", err)
 	}
@@ -187,7 +242,11 @@ func (s *AdminDashboardService) ApprovePendingTransaction(ctx context.Context, t
 }
 
 // DenyPendingTransaction denies a pending transaction.
-func (s *AdminDashboardService) DenyPendingTransaction(ctx context.Context, txnID uuid.UUID) (*models.Transaction, error) {
+func (s *AdminDashboardService) DenyPendingTransaction(ctx context.Context, txnID uuid.UUID, adminID uuid.UUID, requestID string) (*models.Transaction, error) {
+	if adminID == uuid.Nil {
+		return nil, fmt.Errorf("admin id is required")
+	}
+
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -213,6 +272,18 @@ func (s *AdminDashboardService) DenyPendingTransaction(ctx context.Context, txnI
 		txn.Provider, txn.ProviderSessionID, txn.ProviderPaymentIntentID, txn.ProviderStatus, txn.ProviderCheckoutURL,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.auditRepo.CreateApprovalLog(ctx, tx, &models.CreateApprovalAuditLogRequest{
+		TransactionID:  txn.ID,
+		AdminID:        adminID,
+		Action:         "deny",
+		PreviousStatus: txn.Status,
+		NewStatus:      updated.Status,
+		Reason:         updated.Reason,
+		RequestID:      requestID,
+	}); err != nil {
 		return nil, err
 	}
 

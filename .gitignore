@@ -6,12 +6,14 @@ main
 
 # Environment variables
 .env
+.env.local
+.env.*.local
 
 # Node (local tooling)
 node_modules/
 npm-debug.log*
-package.json
-package-lock.json
+/package.json
+/package-lock.json
 
 # Go test/build artifacts
 coverage.out

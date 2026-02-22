@@ -58,6 +58,8 @@ func TestAdminDashboard_ApprovePendingTransaction(t *testing.T) {
 	if balance != 3400 {
 		t.Fatalf("expected user balance 3400 after approval, got %d", balance)
 	}
+
+	assertAuditLogCount(t, db, pendingTxnID, "approve", 1)
 }
 
 func TestAdminDashboard_DenyPendingTransaction(t *testing.T) {
@@ -99,6 +101,8 @@ func TestAdminDashboard_DenyPendingTransaction(t *testing.T) {
 	if balance != 5000 {
 		t.Fatalf("expected user balance unchanged at 5000, got %d", balance)
 	}
+
+	assertAuditLogCount(t, db, pendingTxnID, "deny", 1)
 }
 
 func TestAdminDashboard_PendingQueueAndHistory(t *testing.T) {
@@ -206,4 +210,17 @@ func createPendingTransaction(t *testing.T, db *sql.DB, apiKey string) uuid.UUID
 		t.Fatalf("expected pending transaction to exist")
 	}
 	return txn.ID
+}
+
+func assertAuditLogCount(t *testing.T, db *sql.DB, transactionID uuid.UUID, action string, expected int) {
+	t.Helper()
+
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM approval_audit_logs WHERE transaction_id = $1 AND action = $2`, transactionID, action).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count audit logs: %v", err)
+	}
+	if count != expected {
+		t.Fatalf("expected %d audit logs for action %s, got %d", expected, action, count)
+	}
 }

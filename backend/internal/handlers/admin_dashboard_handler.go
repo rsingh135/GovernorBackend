@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"agentpay/internal/httpjson"
+	"agentpay/internal/middleware"
 	"agentpay/internal/models"
 	"agentpay/internal/services"
 
@@ -167,6 +168,15 @@ func (h *AdminDashboardHandler) GetAgentHistory(w http.ResponseWriter, r *http.R
 	httpjson.Write(w, http.StatusOK, map[string]interface{}{"transactions": normalizeTransactions(history)})
 }
 
+func (h *AdminDashboardHandler) ListApprovalAuditLogs(w http.ResponseWriter, r *http.Request) {
+	logs, err := h.service.ListApprovalAuditLogs(r.Context(), parseLimit(r, 50))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, map[string]interface{}{"logs": logs})
+}
+
 func (h *AdminDashboardHandler) ApproveTransaction(w http.ResponseWriter, r *http.Request) {
 	txnID, action, err := parseTransactionActionPath(r.URL.Path)
 	if err != nil || action != "approve" {
@@ -174,7 +184,13 @@ func (h *AdminDashboardHandler) ApproveTransaction(w http.ResponseWriter, r *htt
 		return
 	}
 
-	txn, err := h.service.ApprovePendingTransaction(r.Context(), txnID)
+	admin, ok := middleware.GetAdminFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	txn, err := h.service.ApprovePendingTransaction(r.Context(), txnID, admin.ID, middleware.GetRequestID(r.Context()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -189,7 +205,13 @@ func (h *AdminDashboardHandler) DenyTransaction(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	txn, err := h.service.DenyPendingTransaction(r.Context(), txnID)
+	admin, ok := middleware.GetAdminFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	txn, err := h.service.DenyPendingTransaction(r.Context(), txnID, admin.ID, middleware.GetRequestID(r.Context()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
