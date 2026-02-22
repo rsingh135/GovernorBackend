@@ -87,6 +87,7 @@ export default function App() {
   const [spendMcc, setSpendMcc] = useState('5734');
   const [spendAmount, setSpendAmount] = useState('5.00');
   const [spendResult, setSpendResult] = useState<SpendResponse | null>(null);
+  const [runFlowPulse, setRunFlowPulse] = useState(false);
 
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [savingGuideline, setSavingGuideline] = useState(false);
@@ -100,6 +101,12 @@ export default function App() {
     () => agents.find((agent) => agent.id === selectedAgentId) || null,
     [agents, selectedAgentId],
   );
+
+  useEffect(() => {
+    if (!runFlowPulse) return;
+    const timer = window.setTimeout(() => setRunFlowPulse(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [runFlowPulse]);
 
   const markReauthRequired = (message: string) => {
     setNeedsReauth(true);
@@ -305,6 +312,7 @@ export default function App() {
     event.preventDefault();
     setErrorMessage('');
     setStatusMessage('Sending spend request...');
+    setRunFlowPulse(true);
 
     const amountDollars = Number.parseFloat(spendAmount);
     if (!Number.isFinite(amountDollars) || amountDollars <= 0) {
@@ -439,277 +447,360 @@ export default function App() {
           </section>
         </main>
       ) : (
-        <>
-          {needsReauth && (
-            <section className="panel reauth-panel">
-              <h2>Re-authentication Required</h2>
-              <p>Your admin session is no longer valid. Sign in again to continue reviewing and updating policies.</p>
-              <button type="button" className="button-primary" onClick={handleReauthenticate}>
-                Re-authenticate
-              </button>
-            </section>
-          )}
+        <div className="console-page">
+          <nav className="console-nav">
+            <div className="console-brand">
+              <p className="console-wordmark">Governor</p>
+              <p className="console-definition">
+                [a mechanism that automatically regulates a system to keep it within safe bounds]
+              </p>
+            </div>
+            <div className="console-nav-links">
+              <a href="https://usegovernor.vercel.app/" target="_blank" rel="noreferrer">Product</a>
+              <a href="https://usegovernor.vercel.app/" target="_blank" rel="noreferrer">For builders</a>
+              <a href="https://usegovernor.vercel.app/" target="_blank" rel="noreferrer">Security</a>
+              <a href="https://usegovernor.vercel.app/" target="_blank" rel="noreferrer">Use cases</a>
+              <a href="https://usegovernor.vercel.app/" target="_blank" rel="noreferrer">Docs</a>
+              <a className="join-access" href="https://usegovernor.vercel.app/" target="_blank" rel="noreferrer">Join early access</a>
+            </div>
+          </nav>
 
-          <main className="dashboard-grid">
-          <section className="panel metrics-panel">
-            <div className="panel-header-row">
-              <div>
-                <h2>Operations Snapshot</h2>
-                <p>Signed in as {adminEmail || 'admin'}.</p>
+          <section className="console-hero">
+            <div className="console-hero-copy">
+              <p className="eyebrow">Governor Console</p>
+              <h1>See how Governor evaluates agent spend in real time.</h1>
+              <p>
+                This sandbox view powers live demos. Simulate purchases, inspect deterministic policy outcomes,
+                and approve flagged transactions without exposing provider secrets.
+              </p>
+            </div>
+            <div className="console-hero-preview">
+              <div className="preview-card">
+                <p>Live Preview</p>
+                <div className="preview-row">
+                  <span>Pending approvals</span>
+                  <strong>{pending.length}</strong>
+                </div>
+                <div className="preview-row">
+                  <span>Recent decisions</span>
+                  <strong>{recentTransactions.length}</strong>
+                </div>
+                <div className="preview-row">
+                  <span>Focused agent</span>
+                  <strong>{selectedAgent?.name || 'Unselected'}</strong>
+                </div>
               </div>
-              <button className="button-ghost" onClick={logout}>Sign Out</button>
+            </div>
+          </section>
+
+          <div className="console-divider">
+            <span>Sandbox environment for demo purposes.</span>
+          </div>
+
+          <section className={`console-shell ${runFlowPulse ? 'is-flowing' : ''}`}>
+            <div className="console-shell-header">
+              <p className="console-shell-kicker">Governor console</p>
+              <span className="env-pill">SANDBOX</span>
             </div>
 
-            <div className="metrics-cards">
-              <article>
-                <p>Users</p>
-                <strong>{users.length}</strong>
-              </article>
-              <article>
-                <p>Agents</p>
-                <strong>{agents.length}</strong>
-              </article>
-              <article>
-                <p>Pending</p>
-                <strong>{pending.length}</strong>
-              </article>
-              <article>
-                <p>Recent Decisions</p>
-                <strong>{recentTransactions.length}</strong>
-              </article>
-            </div>
-
-            <label className="agent-selector">
-              Focus Agent
-              <select value={selectedAgentId} onChange={(e) => setSelectedAgentId(e.target.value)}>
-                <option value="">Select agent</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name} ({agent.status})
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {selectedAgent && (
-              <div className="kill-switch-row">
-                <button
-                  type="button"
-                  className="button-danger"
-                  disabled={busyKillSwitch || needsReauth}
-                  onClick={() => handleAgentKillSwitch('freeze')}
-                >
-                  Freeze Agent
+            {needsReauth && (
+              <section className="panel reauth-panel">
+                <h2>Re-authentication Required</h2>
+                <p>Your admin session is no longer valid. Sign in again to continue reviewing and updating policies.</p>
+                <button type="button" className="button-primary" onClick={handleReauthenticate}>
+                  Re-authenticate
                 </button>
-                <button
-                  type="button"
-                  className="button-ghost"
-                  disabled={busyKillSwitch || needsReauth}
-                  onClick={() => handleAgentKillSwitch('unfreeze')}
-                >
-                  Unfreeze Agent
-                </button>
-                <button
-                  type="button"
-                  className="button-danger"
-                  disabled={busyKillSwitch || needsReauth}
-                  onClick={() => handleOrgKillSwitch('freeze')}
-                >
-                  Freeze Org
-                </button>
-                <button
-                  type="button"
-                  className="button-ghost"
-                  disabled={busyKillSwitch || needsReauth}
-                  onClick={() => handleOrgKillSwitch('unfreeze')}
-                >
-                  Unfreeze Org
-                </button>
-              </div>
+              </section>
             )}
 
-            {policy && (
-              <div className="policy-card">
-                <h3>Live Policy Constraints</h3>
-                <dl>
-                  <div>
-                    <dt>Daily Limit</dt>
-                    <dd>{centsToDollars(policy.daily_limit_cents)}</dd>
-                  </div>
-                  <div>
-                    <dt>Per Transaction Limit</dt>
-                    <dd>{centsToDollars(policy.per_transaction_limit_cents)}</dd>
-                  </div>
-                  <div>
-                    <dt>Human Approval Over</dt>
-                    <dd>{centsToDollars(policy.require_approval_above_cents)}</dd>
-                  </div>
-                  <div>
-                    <dt>Allowed Vendors</dt>
-                    <dd>{policy.allowed_vendors.join(', ') || 'None'}</dd>
-                  </div>
-                  <div>
-                    <dt>Allowed MCCs</dt>
-                    <dd>{(policy.allowed_mccs || []).join(', ') || 'Any'}</dd>
-                  </div>
-                  <div>
-                    <dt>Allowed UTC Weekdays</dt>
-                    <dd>{(policy.allowed_weekdays_utc || []).join(', ') || 'Any'}</dd>
-                  </div>
-                </dl>
+            <div className={`console-pulse ${runFlowPulse ? 'is-active' : ''}`} aria-hidden />
 
-                <form className="stacked-form guideline-form" onSubmit={handleSaveGuideline}>
+            <main className="dashboard-grid dashboard-grid--console">
+              <section className="panel metrics-panel">
+                <div className="panel-header-row">
+                  <div className="section-head">
+                    <h2>Operations Snapshot</h2>
+                    <p>High level view of agents and recent decisions. Signed in as {adminEmail || 'admin'}.</p>
+                  </div>
+                  <button className="button-ghost" onClick={logout}>Sign Out</button>
+                </div>
+
+                <div className="metrics-cards">
+                  <article>
+                    <p>Users</p>
+                    <strong>{users.length}</strong>
+                  </article>
+                  <article>
+                    <p>Agents</p>
+                    <strong>{agents.length}</strong>
+                  </article>
+                  <article>
+                    <p>Pending</p>
+                    <strong>{pending.length}</strong>
+                  </article>
+                  <article>
+                    <p>Recent Decisions</p>
+                    <strong>{recentTransactions.length}</strong>
+                  </article>
+                </div>
+
+                <label className="agent-selector">
+                  Focus Agent
+                  <select value={selectedAgentId} onChange={(e) => setSelectedAgentId(e.target.value)}>
+                    <option value="">Select agent</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name} ({agent.status})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {selectedAgent && (
+                  <div className="kill-switch-row">
+                    <button
+                      type="button"
+                      className="button-danger"
+                      disabled={busyKillSwitch || needsReauth}
+                      onClick={() => handleAgentKillSwitch('freeze')}
+                    >
+                      Freeze Agent
+                    </button>
+                    <button
+                      type="button"
+                      className="button-ghost"
+                      disabled={busyKillSwitch || needsReauth}
+                      onClick={() => handleAgentKillSwitch('unfreeze')}
+                    >
+                      Unfreeze Agent
+                    </button>
+                    <button
+                      type="button"
+                      className="button-danger"
+                      disabled={busyKillSwitch || needsReauth}
+                      onClick={() => handleOrgKillSwitch('freeze')}
+                    >
+                      Freeze Org
+                    </button>
+                    <button
+                      type="button"
+                      className="button-ghost"
+                      disabled={busyKillSwitch || needsReauth}
+                      onClick={() => handleOrgKillSwitch('unfreeze')}
+                    >
+                      Unfreeze Org
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              <section className="panel policy-panel">
+                <div className="section-head">
+                  <h2>Live Policy Constraints</h2>
+                  <p>The rules Governor will enforce for the selected agent.</p>
+                </div>
+
+                {policy ? (
+                  <>
+                    <div className="policy-card">
+                      <dl>
+                        <div>
+                          <dt>Daily Limit</dt>
+                          <dd>{centsToDollars(policy.daily_limit_cents)}</dd>
+                        </div>
+                        <div>
+                          <dt>Per Transaction Limit</dt>
+                          <dd>{centsToDollars(policy.per_transaction_limit_cents)}</dd>
+                        </div>
+                        <div>
+                          <dt>Human Approval Over</dt>
+                          <dd>{centsToDollars(policy.require_approval_above_cents)}</dd>
+                        </div>
+                        <div>
+                          <dt>Allowed Vendors</dt>
+                          <dd>{policy.allowed_vendors.join(', ') || 'None'}</dd>
+                        </div>
+                        <div>
+                          <dt>Allowed MCCs</dt>
+                          <dd>{(policy.allowed_mccs || []).join(', ') || 'Any'}</dd>
+                        </div>
+                        <div>
+                          <dt>Allowed UTC Weekdays</dt>
+                          <dd>{(policy.allowed_weekdays_utc || []).join(', ') || 'Any'}</dd>
+                        </div>
+                      </dl>
+                    </div>
+
+                    <form className="stacked-form guideline-form" onSubmit={handleSaveGuideline}>
+                      <label>
+                        Purchase Guideline Prompt
+                        <textarea
+                          rows={2}
+                          value={guidelineDraft}
+                          onChange={(e) => setGuidelineDraft(e.target.value)}
+                          placeholder="Example: AI and engineering tooling subscriptions only"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="button-primary"
+                        disabled={savingGuideline || needsReauth}
+                      >
+                        {savingGuideline ? 'Saving...' : 'Save Guideline'}
+                      </button>
+                    </form>
+                    <p className="guideline-note">
+                      Spend requests are denied with <code>guideline_mismatch</code> when a vendor domain is not
+                      relevant to this prompt.
+                    </p>
+                  </>
+                ) : (
+                  <p className="empty-row">Select an agent to load policy constraints.</p>
+                )}
+              </section>
+
+              <section className="panel simulation-panel">
+                <div className="section-head">
+                  <h2>Spend Simulation</h2>
+                  <p>Emulate an agent checkout attempt without exposing secrets.</p>
+                </div>
+
+                <form className="stacked-form" onSubmit={handleSpendSimulation}>
                   <label>
-                    Purchase Guideline Prompt
-                    <textarea
-                      rows={2}
-                      value={guidelineDraft}
-                      onChange={(e) => setGuidelineDraft(e.target.value)}
-                      placeholder="Example: AI and engineering tooling subscriptions only"
+                    Agent API Key
+                    <input value={spendApiKey} onChange={(e) => setSpendApiKey(e.target.value)} required />
+                  </label>
+                  <label>
+                    Vendor Domain
+                    <input value={spendVendor} onChange={(e) => setSpendVendor(e.target.value)} required />
+                  </label>
+                  <label>
+                    MCC (optional)
+                    <input value={spendMcc} onChange={(e) => setSpendMcc(e.target.value)} />
+                  </label>
+                  <label>
+                    Amount (USD)
+                    <input
+                      value={spendAmount}
+                      onChange={(e) => setSpendAmount(e.target.value)}
+                      type="number"
+                      inputMode="decimal"
+                      min="0.01"
+                      step="0.01"
+                      placeholder="5.00"
+                      required
                     />
                   </label>
-                  <button
-                    type="submit"
-                    className="button-primary"
-                    disabled={savingGuideline || needsReauth}
-                  >
-                    {savingGuideline ? 'Saving...' : 'Save Guideline'}
-                  </button>
+                  <button className="button-primary" type="submit">Run Purchase Decision</button>
                 </form>
-                <p className="guideline-note">
-                  Spend requests are denied with <code>guideline_mismatch</code> when a vendor domain is not relevant
-                  to this prompt.
-                </p>
-              </div>
-            )}
-          </section>
 
-          <section className="panel simulation-panel">
-            <h2>Spend Simulation</h2>
-            <p>Emulates an agent-side checkout attempt while hiding provider secrets from the agent.</p>
-
-            <form className="stacked-form" onSubmit={handleSpendSimulation}>
-              <label>
-                Agent API Key
-                <input value={spendApiKey} onChange={(e) => setSpendApiKey(e.target.value)} required />
-              </label>
-              <label>
-                Vendor Domain
-                <input value={spendVendor} onChange={(e) => setSpendVendor(e.target.value)} required />
-              </label>
-              <label>
-                MCC (optional)
-                <input value={spendMcc} onChange={(e) => setSpendMcc(e.target.value)} />
-              </label>
-              <label>
-                Amount (USD)
-                <input
-                  value={spendAmount}
-                  onChange={(e) => setSpendAmount(e.target.value)}
-                  type="number"
-                  inputMode="decimal"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="5.00"
-                  required
-                />
-              </label>
-              <button className="button-primary" type="submit">Run Purchase Decision</button>
-            </form>
-
-            {spendResult && (
-              <div className="decision-card">
-                <h3>Decision Outcome</h3>
-                <p className={statusClass(spendResult.status)}>{spendResult.status}</p>
-                <p><strong>Reason:</strong> {spendResult.reason}</p>
-                {spendResult.provider_status && <p><strong>Provider:</strong> {spendResult.provider_status}</p>}
-                {spendResult.checkout_url && (
-                  <p>
-                    <strong>Checkout:</strong>{' '}
-                    <a href={spendResult.checkout_url} target="_blank" rel="noreferrer">Open Stripe Checkout</a>
-                  </p>
+                {spendResult && (
+                  <div className="decision-card">
+                    <h3>Decision Outcome</h3>
+                    <p className={statusClass(spendResult.status)}>{spendResult.status}</p>
+                    <p><strong>Reason:</strong> {spendResult.reason}</p>
+                    {spendResult.provider_status && <p><strong>Provider:</strong> {spendResult.provider_status}</p>}
+                    {spendResult.checkout_url && (
+                      <p>
+                        <strong>Checkout:</strong>{' '}
+                        <a href={spendResult.checkout_url} target="_blank" rel="noreferrer">Open Stripe Checkout</a>
+                      </p>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-          </section>
+              </section>
 
-          <section className="panel pending-panel">
-            <h2>Pending Human Review</h2>
-            <p>Transactions above threshold stay queued until approved or denied.</p>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Vendor</th>
-                    <th>Amount</th>
-                    <th>Reason</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pending.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="empty-row">No pending approvals.</td>
-                    </tr>
-                  )}
-                  {pending.map((tx) => (
-                    <tr key={tx.id}>
-                      <td>
-                        <button
-                          className="link-button"
-                          onClick={() => setSelectedAgentId(tx.agent_id)}
-                          type="button"
-                        >
-                          {tx.vendor}
-                        </button>
-                      </td>
-                      <td>{centsToDollars(tx.amount_cents)}</td>
-                      <td>{tx.reason}</td>
-                      <td className="actions-cell">
-                        <button
-                          type="button"
-                          className="button-success"
-                          disabled={busyTransactionId === tx.id || needsReauth}
-                          onClick={() => handleReviewAction(tx.id, 'approve')}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          className="button-danger"
-                          disabled={busyTransactionId === tx.id || needsReauth}
-                          onClick={() => handleReviewAction(tx.id, 'deny')}
-                        >
-                          Deny
-                        </button>
-                      </td>
-                    </tr>
+              <section className="panel pending-panel">
+                <div className="section-head">
+                  <h2>Pending Human Review</h2>
+                  <p>Transactions above threshold stay queued until approved or denied.</p>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Vendor</th>
+                        <th>Amount</th>
+                        <th>Reason</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pending.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="empty-row">No pending approvals.</td>
+                        </tr>
+                      )}
+                      {pending.map((tx) => (
+                        <tr key={tx.id}>
+                          <td>
+                            <button
+                              className="link-button"
+                              onClick={() => setSelectedAgentId(tx.agent_id)}
+                              type="button"
+                            >
+                              {tx.vendor}
+                            </button>
+                          </td>
+                          <td>{centsToDollars(tx.amount_cents)}</td>
+                          <td>{tx.reason}</td>
+                          <td className="actions-cell">
+                            <button
+                              type="button"
+                              className="button-success"
+                              disabled={busyTransactionId === tx.id || needsReauth}
+                              onClick={() => handleReviewAction(tx.id, 'approve')}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="button-danger"
+                              disabled={busyTransactionId === tx.id || needsReauth}
+                              onClick={() => handleReviewAction(tx.id, 'deny')}
+                            >
+                              Deny
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="panel history-panel">
+                <div className="section-head">
+                  <h2>Selected Agent History (Last 10)</h2>
+                  <p>Use this context before deciding flagged payments.</p>
+                </div>
+                <ul>
+                  {agentHistory.length === 0 && <li className="empty-row">Select an agent to view history.</li>}
+                  {agentHistory.map((tx) => (
+                    <li key={tx.id}>
+                      <span>{new Date(tx.created_at).toLocaleString()}</span>
+                      <span>{tx.vendor}</span>
+                      <span>{centsToDollars(tx.amount_cents)}</span>
+                      <span className={statusClass(tx.status)}>{tx.status}</span>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </ul>
+              </section>
+            </main>
 
-          <section className="panel history-panel">
-            <h2>Selected Agent History (Last 10)</h2>
-            <p>Use this context before deciding flagged payments.</p>
-            <ul>
-              {agentHistory.length === 0 && <li className="empty-row">Select an agent to view history.</li>}
-              {agentHistory.map((tx) => (
-                <li key={tx.id}>
-                  <span>{new Date(tx.created_at).toLocaleString()}</span>
-                  <span>{tx.vendor}</span>
-                  <span>{centsToDollars(tx.amount_cents)}</span>
-                  <span className={statusClass(tx.status)}>{tx.status}</span>
-                </li>
-              ))}
-            </ul>
+            <footer className="console-status-strip">
+              {loadingDashboard && <span>Loading dashboard...</span>}
+              {!loadingDashboard && statusMessage && <span>{statusMessage}</span>}
+              {!loadingDashboard && !statusMessage && !errorMessage && (
+                <span>Console ready for sandbox transactions.</span>
+              )}
+              {errorMessage && <span className="error">{errorMessage}</span>}
+            </footer>
           </section>
-          </main>
-        </>
+        </div>
       )}
 
-      {(loadingDashboard || statusMessage || errorMessage) && (
+      {!token && (loadingDashboard || statusMessage || errorMessage) && (
         <footer className="status-bar">
           {loadingDashboard && <span>Loading dashboard...</span>}
           {!loadingDashboard && statusMessage && <span>{statusMessage}</span>}

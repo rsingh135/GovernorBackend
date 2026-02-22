@@ -202,7 +202,7 @@ curl -X POST http://localhost:8080/policies \
   -H "Content-Type: application/json" \
   -d '{
     "agent_id": "<AGENT_ID>",
-    "daily_limit_cents": 2000,
+    "daily_limit_cents": 10000,
     "allowed_vendors": ["openai.com"],
     "require_approval_above_cents": 1500
   }'

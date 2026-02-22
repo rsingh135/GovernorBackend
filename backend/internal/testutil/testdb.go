@@ -91,11 +91,11 @@ func SeedTestData(t *testing.T, db *sql.DB) (ranveerUserID, bhangraBotAgentID uu
 		t.Fatalf("Failed to seed TigerBot agent: %v", err)
 	}
 
-	// Create policy for TigerBot: 2000 cents daily limit, only openai.com allowed
+	// Create policy for TigerBot: $100 daily limit, only openai.com allowed
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO policies (agent_id, daily_limit_cents, allowed_vendors, require_approval_above_cents, raw_policy, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, '{}'::jsonb, now(), now())
-	`, bhangraBotAgentID, 2000, pq.Array([]string{"openai.com"}), 1500)
+	`, bhangraBotAgentID, 10000, pq.Array([]string{"openai.com"}), 1500)
 	if err != nil {
 		t.Fatalf("Failed to seed TigerBot policy: %v", err)
 	}

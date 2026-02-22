@@ -55,12 +55,12 @@ INSERT INTO policies (agent_id, currency, daily_limit_cents, allowed_vendors, re
     (
         '22222222-2222-2222-2222-222222222222',
         'usd',
-        2000,
+        10000,
         ARRAY['openai.com']::TEXT[],
         1500,
         jsonb_build_object(
             'currency', 'usd',
-            'daily_limit_cents', 2000,
+            'daily_limit_cents', 10000,
             'allowed_vendors', jsonb_build_array('openai.com'),
             'require_approval_above_cents', 1500
         )

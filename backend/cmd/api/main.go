@@ -36,6 +36,7 @@ func main() {
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(adminAuthService)
 	requestIDMiddleware := middleware.NewRequestIDMiddleware()
 	loggingMiddleware := middleware.NewLoggingMiddleware()
+	corsMiddleware := middleware.NewCORSMiddleware(getAllowedOrigins())
 	loginRateLimiter := middleware.NewRateLimiterMiddleware(getEnvInt("ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE", 20), time.Minute)
 	spendRateLimiter := middleware.NewRateLimiterMiddleware(getEnvInt("SPEND_RATE_LIMIT_PER_MINUTE", 120), time.Minute)
 	reviewRateLimiter := middleware.NewRateLimiterMiddleware(getEnvInt("ADMIN_REVIEW_RATE_LIMIT_PER_MINUTE", 60), time.Minute)
@@ -234,7 +235,7 @@ func main() {
 
 	port := getEnv("PORT", "8080")
 	log.Printf("Governor API server starting on port %s", port)
-	rootHandler := requestIDMiddleware.AddRequestID(loggingMiddleware.Log(mux))
+	rootHandler := requestIDMiddleware.AddRequestID(loggingMiddleware.Log(corsMiddleware.Handle(mux)))
 	if err := http.ListenAndServe(":"+port, rootHandler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
@@ -266,6 +267,37 @@ func getEnvInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return value
+}
+
+func getAllowedOrigins() []string {
+	defaultOrigins := []string{
+		"http://localhost:3000",
+		"http://localhost:3001",
+		"http://localhost:5173",
+		"http://127.0.0.1:3000",
+		"http://127.0.0.1:3001",
+		"http://127.0.0.1:5173",
+	}
+
+	raw := strings.TrimSpace(getEnv("CORS_ALLOWED_ORIGINS", ""))
+	if raw == "" {
+		return defaultOrigins
+	}
+
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		origins = append(origins, trimmed)
+	}
+
+	if len(origins) == 0 {
+		return defaultOrigins
+	}
+	return origins
 }
 
 func buildPaymentProvider() payments.Provider {
