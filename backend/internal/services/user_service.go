@@ -30,6 +30,7 @@ func (s *UserService) CreateUser(ctx context.Context, name string, initialBalanc
 	return &models.CreateUserResponse{
 		ID:           user.ID,
 		Name:         user.Name,
+		Status:       user.Status,
 		BalanceCents: user.BalanceCents,
 		CreatedAt:    user.CreatedAt,
 	}, nil

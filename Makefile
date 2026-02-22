@@ -32,6 +32,8 @@ migrate:
 	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/003_add_admin_auth.sql
 	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/004_add_payment_provider_fields.sql
 	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/005_add_approval_audit_logs.sql
+	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/006_add_purchase_guideline.sql
+	docker exec agentpay-db psql -U postgres -d agentpay -f /docker-entrypoint-initdb.d/007_policy_controls_and_kill_switch.sql
 	@echo "Main database incremental migrations applied successfully!"
 
 db-test-setup:
@@ -42,6 +44,8 @@ db-test-setup:
 	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/003_add_admin_auth.sql
 	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/004_add_payment_provider_fields.sql
 	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/005_add_approval_audit_logs.sql
+	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/006_add_purchase_guideline.sql
+	docker exec agentpay-db psql -U postgres -d agentpay_test -f /docker-entrypoint-initdb.d/007_policy_controls_and_kill_switch.sql
 	@echo "Test database created and migrated successfully!"
 
 backend:

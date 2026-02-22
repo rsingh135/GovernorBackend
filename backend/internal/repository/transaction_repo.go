@@ -131,6 +131,42 @@ func (r *TransactionRepository) GetTodaySpendForAgent(ctx context.Context, tx *s
 	return totalSpent, nil
 }
 
+// HasApprovedVendorForAgent checks whether agent has prior approved spend with vendor.
+func (r *TransactionRepository) HasApprovedVendorForAgent(ctx context.Context, tx *sql.Tx, agentID uuid.UUID, vendor string) (bool, error) {
+	var exists bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM transactions
+			WHERE agent_id = $1
+			  AND status = 'APPROVED'
+			  AND vendor = $2
+		)
+	`, agentID, strings.ToLower(strings.TrimSpace(vendor))).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check vendor history: %w", err)
+	}
+	return exists, nil
+}
+
+// GetApprovedAverageSpendForAgent returns average approved transaction amount in cents.
+func (r *TransactionRepository) GetApprovedAverageSpendForAgent(ctx context.Context, tx *sql.Tx, agentID uuid.UUID) (int64, error) {
+	var average sql.NullFloat64
+	err := tx.QueryRowContext(ctx, `
+		SELECT AVG(amount_cents)::float8
+		FROM transactions
+		WHERE agent_id = $1
+		  AND status = 'APPROVED'
+	`, agentID).Scan(&average)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get average spend: %w", err)
+	}
+	if !average.Valid {
+		return 0, nil
+	}
+	return int64(average.Float64), nil
+}
+
 // GetByID retrieves a transaction by ID.
 func (r *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
 	row := r.db.QueryRowContext(ctx, `

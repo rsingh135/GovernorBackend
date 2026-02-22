@@ -18,3 +18,15 @@ npm-debug.log*
 # Go test/build artifacts
 coverage.out
 coverage.html
+*.test
+
+# Frontend build output
+frontend/dist/
+
+# Editors / OS cruft
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log

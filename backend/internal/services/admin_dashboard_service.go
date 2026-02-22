@@ -62,6 +62,36 @@ func (s *AdminDashboardService) GetAgent(ctx context.Context, agentID uuid.UUID)
 	return s.agentRepo.GetByID(ctx, agentID)
 }
 
+func (s *AdminDashboardService) FreezeAgent(ctx context.Context, agentID uuid.UUID) (*models.Agent, error) {
+	return s.agentRepo.UpdateStatus(ctx, agentID, "frozen")
+}
+
+func (s *AdminDashboardService) UnfreezeAgent(ctx context.Context, agentID uuid.UUID) (*models.Agent, error) {
+	return s.agentRepo.UpdateStatus(ctx, agentID, "active")
+}
+
+func (s *AdminDashboardService) FreezeUser(ctx context.Context, userID uuid.UUID) (*models.User, error) {
+	user, err := s.userRepo.UpdateStatus(ctx, userID, "frozen")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.agentRepo.UpdateStatusByUserID(ctx, userID, "frozen"); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *AdminDashboardService) UnfreezeUser(ctx context.Context, userID uuid.UUID) (*models.User, error) {
+	user, err := s.userRepo.UpdateStatus(ctx, userID, "active")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.agentRepo.UpdateStatusByUserID(ctx, userID, "active"); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
 func (s *AdminDashboardService) GetPolicyByAgent(ctx context.Context, agentID uuid.UUID) (*models.Policy, error) {
 	return s.policyRepo.GetByAgentID(ctx, agentID)
 }

@@ -49,7 +49,7 @@ CREATE INDEX idx_transactions_request_id ON transactions(request_id);
 -- Seed Data (dev only)
 -- apiKey for the seeded agent: sk_test_agent_123
 INSERT INTO agents (id, name, status, api_key_hash, api_key_prefix) VALUES
-    ('22222222-2222-2222-2222-222222222222', 'BhangraBot', 'active', digest('sk_test_agent_123', 'sha256'), 'sk_test_');
+    ('22222222-2222-2222-2222-222222222222', 'TigerBot', 'active', digest('sk_test_agent_123', 'sha256'), 'sk_test_');
 
 INSERT INTO policies (agent_id, currency, daily_limit_cents, allowed_vendors, require_approval_above_cents, raw_policy) VALUES
     (

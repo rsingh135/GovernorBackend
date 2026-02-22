@@ -9,6 +9,16 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 function buildUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
@@ -16,7 +26,8 @@ function buildUrl(path: string): string {
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    const message = text.trim() || `Request failed with status ${response.status}`;
+    throw new ApiError(response.status, message);
   }
   return (await response.json()) as T;
 }
@@ -72,6 +83,63 @@ export async function getPolicyForAgent(token: string, agentId: string): Promise
   return parseJson<{ policy: Policy }>(response);
 }
 
+export async function upsertPolicyForAgent(
+  token: string,
+  payload: {
+    agent_id: string;
+    daily_limit_cents: number;
+    per_transaction_limit_cents: number;
+    allowed_vendors: string[];
+    allowed_mccs: string[];
+    allowed_weekdays_utc: number[];
+    allowed_hours_utc: number[];
+    require_approval_above_cents: number;
+    purchase_guideline: string;
+  },
+): Promise<Policy> {
+  const response = await fetch(buildUrl('/admin/policies'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<Policy>(response);
+}
+
+export async function freezeAgent(token: string, agentId: string): Promise<{ agent: Agent }> {
+  const response = await fetch(buildUrl(`/admin/agents/${agentId}/freeze`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson<{ agent: Agent }>(response);
+}
+
+export async function unfreezeAgent(token: string, agentId: string): Promise<{ agent: Agent }> {
+  const response = await fetch(buildUrl(`/admin/agents/${agentId}/unfreeze`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson<{ agent: Agent }>(response);
+}
+
+export async function freezeUser(token: string, userId: string): Promise<{ user: User }> {
+  const response = await fetch(buildUrl(`/admin/users/${userId}/freeze`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson<{ user: User }>(response);
+}
+
+export async function unfreezeUser(token: string, userId: string): Promise<{ user: User }> {
+  const response = await fetch(buildUrl(`/admin/users/${userId}/unfreeze`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson<{ user: User }>(response);
+}
+
 export async function getAgentHistory(token: string, agentId: string, limit = 10): Promise<{ transactions: Transaction[] }> {
   const response = await fetch(buildUrl(`/admin/agents/${agentId}/history?limit=${limit}`), {
     headers: { Authorization: `Bearer ${token}` },
@@ -95,7 +163,10 @@ export async function denyTransaction(token: string, transactionId: string): Pro
   return parseJson<{ transaction: Transaction }>(response);
 }
 
-export async function simulateSpend(apiKey: string, payload: { request_id: string; amount: number; vendor: string; meta: Record<string, unknown> }): Promise<SpendResponse> {
+export async function simulateSpend(
+  apiKey: string,
+  payload: { request_id: string; amount: number; vendor: string; mcc?: string; meta: Record<string, unknown> },
+): Promise<SpendResponse> {
   const response = await fetch(buildUrl('/spend'), {
     method: 'POST',
     headers: {
@@ -108,6 +179,9 @@ export async function simulateSpend(apiKey: string, payload: { request_id: strin
 }
 
 export function centsToDollars(cents: number): string {
+  if (!Number.isFinite(cents)) {
+    return '$0.00';
+  }
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',

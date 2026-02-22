@@ -151,6 +151,60 @@ func TestAdminDashboard_PendingQueueAndHistory(t *testing.T) {
 	}
 }
 
+func TestAdminDashboard_FreezeAgent(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	_, bhangraBotAgentID, _ := testutil.SeedTestData(t, db)
+
+	adminMW, dashboardHandler := setupAdminDashboardHandlers(t, db)
+	token := adminLoginToken(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/agents/%s/freeze", bhangraBotAgentID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	adminMW.Authenticate(dashboardHandler.FreezeAgent)(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var body map[string]models.Agent
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if body["agent"].Status != "frozen" {
+		t.Fatalf("expected frozen agent status, got %s", body["agent"].Status)
+	}
+}
+
+func TestAdminDashboard_FreezeUser(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, _ := testutil.SeedTestData(t, db)
+
+	adminMW, dashboardHandler := setupAdminDashboardHandlers(t, db)
+	token := adminLoginToken(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/users/%s/freeze", ranveerUserID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	adminMW.Authenticate(dashboardHandler.FreezeUser)(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var userStatus string
+	if err := db.QueryRow("SELECT status FROM users WHERE id = $1", ranveerUserID).Scan(&userStatus); err != nil {
+		t.Fatalf("failed to read user status: %v", err)
+	}
+	if userStatus != "frozen" {
+		t.Fatalf("expected user status frozen, got %s", userStatus)
+	}
+}
+
 func setupAdminDashboardHandlers(t *testing.T, db *sql.DB) (*middleware.AdminAuthMiddleware, *AdminDashboardHandler) {
 	t.Helper()
 

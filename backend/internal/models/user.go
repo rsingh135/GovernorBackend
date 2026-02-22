@@ -10,6 +10,7 @@ import (
 type User struct {
 	ID           uuid.UUID `json:"id"`
 	Name         string    `json:"name"`
+	Status       string    `json:"status"`
 	BalanceCents int64     `json:"balance_cents"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -17,7 +18,7 @@ type User struct {
 
 // CreateUserRequest is the request body for creating a user.
 type CreateUserRequest struct {
-	Name               string `json:"name"`
+	Name                string `json:"name"`
 	InitialBalanceCents int64  `json:"initial_balance_cents"`
 }
 
@@ -25,6 +26,7 @@ type CreateUserRequest struct {
 type CreateUserResponse struct {
 	ID           uuid.UUID `json:"id"`
 	Name         string    `json:"name"`
+	Status       string    `json:"status"`
 	BalanceCents int64     `json:"balance_cents"`
 	CreatedAt    time.Time `json:"created_at"`
 }

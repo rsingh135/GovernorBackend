@@ -30,6 +30,7 @@ type SpendRequest struct {
 	RequestID uuid.UUID              `json:"request_id"`
 	Amount    int64                  `json:"amount"` // cents
 	Vendor    string                 `json:"vendor"`
+	MCC       string                 `json:"mcc,omitempty"`
 	Meta      map[string]interface{} `json:"meta"`
 }
 

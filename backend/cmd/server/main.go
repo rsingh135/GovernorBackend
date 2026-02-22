@@ -12,6 +12,7 @@ import (
 	"agentpay/internal/handlers"
 	"agentpay/internal/middleware"
 	"agentpay/internal/payments"
+	"agentpay/internal/repository"
 	"agentpay/internal/services"
 )
 
@@ -51,6 +52,7 @@ func main() {
 	agentHandler := handlers.NewAgentHandler(agentService)
 	policyHandler := handlers.NewPolicyHandler(policyService)
 	spendHandler := handlers.NewSpendHandler(spendService)
+	proxyHandler := handlers.NewProxyHandler(repository.NewPolicyRepository(database.DB))
 	adminAuthHandler := handlers.NewAdminAuthHandler(adminAuthService)
 	adminDashboardService := services.NewAdminDashboardServiceWithProvider(database.DB, paymentProvider)
 	adminDashboardHandler := handlers.NewAdminDashboardHandler(adminDashboardService)
@@ -87,6 +89,14 @@ func main() {
 	})
 
 	// Protected routes (require API key authentication)
+	mux.HandleFunc("/proxy/browse", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			spendRateLimiter.Limit(authMiddleware.Authenticate(proxyHandler.Browse))(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
 	mux.HandleFunc("/spend", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			spendRateLimiter.Limit(authMiddleware.Authenticate(spendHandler.Spend))(w, r)
@@ -125,6 +135,16 @@ func main() {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetUser)(w, r)
 			return
 		}
+		if r.Method == http.MethodPost {
+			if strings.HasSuffix(r.URL.Path, "/freeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.FreezeUser)(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/unfreeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.UnfreezeUser)(w, r)
+				return
+			}
+		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
@@ -145,12 +165,26 @@ func main() {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetAgent)(w, r)
 			return
 		}
+		if r.Method == http.MethodPost {
+			if strings.HasSuffix(r.URL.Path, "/freeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.FreezeAgent)(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/unfreeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.UnfreezeAgent)(w, r)
+				return
+			}
+		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
 	mux.HandleFunc("/admin/policies", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetPolicyByAgent)(w, r)
+			return
+		}
+		if r.Method == http.MethodPost {
+			adminAuthMiddleware.Authenticate(policyHandler.UpsertPolicy)(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -219,15 +253,21 @@ func main() {
 	log.Println("   POST /users      - Create user account")
 	log.Println("   POST /agents     - Provision agent")
 	log.Println("   POST /policies   - Manage spending policies")
+	log.Println("   GET  /proxy/browse?url={encoded_url} - Agent browser sidecar proxy")
 	log.Println("   POST /spend      - Process spending request (authenticated)")
 	log.Println("   POST /admin/login - Admin session login")
 	log.Println("   GET  /admin/me    - Get authenticated admin profile")
 	log.Println("   GET  /admin/users - List users")
 	log.Println("   GET  /admin/users/{id} - Get user")
+	log.Println("   POST /admin/users/{id}/freeze - Freeze user org")
+	log.Println("   POST /admin/users/{id}/unfreeze - Unfreeze user org")
 	log.Println("   GET  /admin/agents - List agents")
 	log.Println("   GET  /admin/agents/{id} - Get agent")
 	log.Println("   GET  /admin/agents/{id}/history - Agent recent transactions")
+	log.Println("   POST /admin/agents/{id}/freeze - Freeze agent")
+	log.Println("   POST /admin/agents/{id}/unfreeze - Unfreeze agent")
 	log.Println("   GET  /admin/policies?agent_id={id} - Get policy for agent")
+	log.Println("   POST /admin/policies - Update policy for agent")
 	log.Println("   GET  /admin/transactions - List transactions")
 	log.Println("   GET  /admin/transactions/pending - List pending approvals")
 	log.Println("   GET  /admin/transactions/{id} - Get transaction")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,8 +51,12 @@ func NewSpendServiceWithProvider(db *sql.DB, provider payments.Provider) *SpendS
 func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, req *models.SpendRequest) (*models.SpendResponse, error) {
 	// Normalize inputs
 	req.Vendor = strings.ToLower(strings.TrimSpace(req.Vendor))
+	req.MCC = strings.ToLower(strings.TrimSpace(req.MCC))
 	if req.Meta == nil {
 		req.Meta = make(map[string]interface{})
+	}
+	if req.MCC != "" {
+		req.Meta["mcc"] = req.MCC
 	}
 
 	// Idempotency check (outside transaction for performance)
@@ -102,6 +107,14 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 	if err != nil {
 		return nil, err
 	}
+	if strings.EqualFold(user.Status, "frozen") {
+		txn := s.createDeniedTransaction(agent.ID, req, "organization_frozen")
+		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
+			return nil, err
+		}
+		_ = tx.Commit()
+		return s.transactionToResponse(txn), nil
+	}
 	if user.BalanceCents < req.Amount {
 		txn := s.createDeniedTransaction(agent.ID, req, "insufficient_balance")
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
@@ -129,6 +142,15 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 	}
 
 	// Evaluate spending rules
+	if req.Amount > policy.PerTransactionLimitCents {
+		txn := s.createDeniedTransaction(agent.ID, req, "per_transaction_limit_exceeded")
+		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
+			return nil, err
+		}
+		_ = tx.Commit()
+		return s.transactionToResponse(txn), nil
+	}
+
 	if req.Amount+todaySpent > policy.DailyLimitCents {
 		txn := s.createDeniedTransaction(agent.ID, req, "daily_limit_exceeded")
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
@@ -147,6 +169,33 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		return s.transactionToResponse(txn), nil
 	}
 
+	if !s.isMCCAllowed(req.MCC, policy.AllowedMCCs) {
+		txn := s.createDeniedTransaction(agent.ID, req, "mcc_not_allowed")
+		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
+			return nil, err
+		}
+		_ = tx.Commit()
+		return s.transactionToResponse(txn), nil
+	}
+
+	if !s.isWithinAllowedWindow(time.Now().UTC(), policy.AllowedWeekdaysUTC, policy.AllowedHoursUTC) {
+		txn := s.createDeniedTransaction(agent.ID, req, "outside_allowed_time_window")
+		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
+			return nil, err
+		}
+		_ = tx.Commit()
+		return s.transactionToResponse(txn), nil
+	}
+
+	if !s.isVendorRelevantToGuideline(req.Vendor, policy.PurchaseGuideline) {
+		txn := s.createDeniedTransaction(agent.ID, req, "guideline_mismatch")
+		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
+			return nil, err
+		}
+		_ = tx.Commit()
+		return s.transactionToResponse(txn), nil
+	}
+
 	// Check approval threshold
 	var status, reason string
 	if policy.RequireApprovalAboveCents > 0 && req.Amount > policy.RequireApprovalAboveCents {
@@ -155,6 +204,25 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 	} else {
 		status = "APPROVED"
 		reason = "approved"
+	}
+
+	if status == "APPROVED" {
+		averageSpend, err := s.txnRepo.GetApprovedAverageSpendForAgent(txCtx, tx, agent.ID)
+		if err != nil {
+			return nil, err
+		}
+		seenVendor, err := s.txnRepo.HasApprovedVendorForAgent(txCtx, tx, agent.ID, req.Vendor)
+		if err != nil {
+			return nil, err
+		}
+		if averageSpend > 0 && !seenVendor {
+			status = "PENDING_APPROVAL"
+			reason = "new_vendor_requires_approval"
+		}
+		if s.isUnusualSpend(req.Amount, averageSpend) {
+			status = "PENDING_APPROVAL"
+			reason = "unusual_spend_requires_approval"
+		}
 	}
 
 	// Create transaction
@@ -261,4 +329,141 @@ func (s *SpendService) isVendorAllowed(vendor string, allowedVendors []string) b
 		}
 	}
 	return false
+}
+
+// isMCCAllowed enforces optional MCC allowlists.
+func (s *SpendService) isMCCAllowed(mcc string, allowedMCCs []string) bool {
+	if len(allowedMCCs) == 0 {
+		return true
+	}
+	mcc = strings.ToLower(strings.TrimSpace(mcc))
+	if mcc == "" {
+		return false
+	}
+	for _, allowed := range allowedMCCs {
+		if strings.ToLower(strings.TrimSpace(allowed)) == mcc {
+			return true
+		}
+	}
+	return false
+}
+
+// isWithinAllowedWindow enforces optional UTC weekday/hour allowlists.
+func (s *SpendService) isWithinAllowedWindow(now time.Time, allowedWeekdays []int, allowedHours []int) bool {
+	weekdayAllowed := true
+	if len(allowedWeekdays) > 0 {
+		weekdayAllowed = false
+		currentDay := int(now.UTC().Weekday())
+		for _, day := range allowedWeekdays {
+			if day == currentDay {
+				weekdayAllowed = true
+				break
+			}
+		}
+	}
+
+	if !weekdayAllowed {
+		return false
+	}
+
+	hourAllowed := true
+	if len(allowedHours) > 0 {
+		hourAllowed = false
+		currentHour := now.UTC().Hour()
+		for _, hour := range allowedHours {
+			if hour == currentHour {
+				hourAllowed = true
+				break
+			}
+		}
+	}
+
+	return hourAllowed
+}
+
+func (s *SpendService) isUnusualSpend(amountCents int64, averageCents int64) bool {
+	if averageCents <= 0 {
+		return false
+	}
+	// Trigger human review when spend is materially above baseline.
+	return amountCents >= (averageCents*3) && amountCents >= 1000
+}
+
+var tokenSplitRegex = regexp.MustCompile(`[^a-z0-9]+`)
+
+func (s *SpendService) isVendorRelevantToGuideline(vendor string, guideline string) bool {
+	vendor = strings.ToLower(strings.TrimSpace(vendor))
+	guideline = strings.ToLower(strings.TrimSpace(guideline))
+
+	if guideline == "" {
+		return true
+	}
+	if vendor == "" {
+		return false
+	}
+
+	vendorCore := strings.ReplaceAll(vendor, ".", "")
+	if strings.Contains(guideline, vendorCore) {
+		return true
+	}
+
+	guidelineTokens := tokenSet(guideline)
+	if len(guidelineTokens) == 0 {
+		return true
+	}
+
+	for token := range tokenSet(vendor) {
+		if len(token) < 2 {
+			continue
+		}
+		if _, ok := guidelineTokens[token]; ok {
+			return true
+		}
+		if len(token) >= 4 && strings.Contains(guideline, token) {
+			return true
+		}
+	}
+
+	for _, hint := range vendorGuidelineHints(vendor) {
+		if _, ok := guidelineTokens[hint]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func tokenSet(input string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, raw := range tokenSplitRegex.Split(strings.ToLower(input), -1) {
+		token := strings.TrimSpace(raw)
+		if token == "" {
+			continue
+		}
+		out[token] = struct{}{}
+	}
+	return out
+}
+
+func vendorGuidelineHints(vendor string) []string {
+	hints := make([]string, 0, 4)
+
+	addHints := func(words ...string) {
+		hints = append(hints, words...)
+	}
+
+	switch {
+	case strings.Contains(vendor, "openai"), strings.Contains(vendor, "anthropic"), strings.Contains(vendor, "claude"), strings.Contains(vendor, "perplexity"):
+		addHints("ai", "llm", "model", "inference")
+	case strings.Contains(vendor, "github"), strings.Contains(vendor, "gitlab"), strings.Contains(vendor, "bitbucket"):
+		addHints("code", "developer", "engineering", "repository")
+	case strings.Contains(vendor, "aws"), strings.Contains(vendor, "azure"), strings.Contains(vendor, "gcp"), strings.Contains(vendor, "vercel"), strings.Contains(vendor, "render"), strings.Contains(vendor, "railway"), strings.Contains(vendor, "digitalocean"):
+		addHints("cloud", "infrastructure", "hosting", "compute")
+	case strings.Contains(vendor, "slack"), strings.Contains(vendor, "notion"), strings.Contains(vendor, "atlassian"):
+		addHints("productivity", "operations", "collaboration")
+	case strings.Contains(vendor, "stripe"), strings.Contains(vendor, "paypal"):
+		addHints("payments", "billing", "finance")
+	}
+
+	return hints
 }

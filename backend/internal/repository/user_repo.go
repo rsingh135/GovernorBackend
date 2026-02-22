@@ -25,12 +25,13 @@ func (r *UserRepository) Create(ctx context.Context, name string, initialBalance
 	user := &models.User{}
 
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO users (name, balance_cents)
-		VALUES ($1, $2)
-		RETURNING id, name, balance_cents, created_at, updated_at
-	`, name, initialBalanceCents).Scan(
+		INSERT INTO users (name, status, balance_cents)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, status, balance_cents, created_at, updated_at
+	`, name, "active", initialBalanceCents).Scan(
 		&user.ID,
 		&user.Name,
+		&user.Status,
 		&user.BalanceCents,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -48,12 +49,13 @@ func (r *UserRepository) GetByID(ctx context.Context, userID uuid.UUID) (*models
 	user := &models.User{}
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, name, balance_cents, created_at, updated_at
+		SELECT id, name, status, balance_cents, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`, userID).Scan(
 		&user.ID,
 		&user.Name,
+		&user.Status,
 		&user.BalanceCents,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -75,13 +77,14 @@ func (r *UserRepository) GetByIDForUpdate(ctx context.Context, tx *sql.Tx, userI
 	user := &models.User{}
 
 	err := tx.QueryRowContext(ctx, `
-		SELECT id, name, balance_cents, created_at, updated_at
+		SELECT id, name, status, balance_cents, created_at, updated_at
 		FROM users
 		WHERE id = $1
 		FOR UPDATE
 	`, userID).Scan(
 		&user.ID,
 		&user.Name,
+		&user.Status,
 		&user.BalanceCents,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -130,7 +133,7 @@ func (r *UserRepository) List(ctx context.Context, limit int) ([]models.User, er
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, balance_cents, created_at, updated_at
+		SELECT id, name, status, balance_cents, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 		LIMIT $1
@@ -143,7 +146,7 @@ func (r *UserRepository) List(ctx context.Context, limit int) ([]models.User, er
 	users := make([]models.User, 0, limit)
 	for rows.Next() {
 		var user models.User
-		if err := rows.Scan(&user.ID, &user.Name, &user.BalanceCents, &user.CreatedAt, &user.UpdatedAt); err != nil {
+		if err := rows.Scan(&user.ID, &user.Name, &user.Status, &user.BalanceCents, &user.CreatedAt, &user.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}
 		users = append(users, user)
@@ -154,4 +157,30 @@ func (r *UserRepository) List(ctx context.Context, limit int) ([]models.User, er
 	}
 
 	return users, nil
+}
+
+// UpdateStatus sets the user status to active/frozen.
+func (r *UserRepository) UpdateStatus(ctx context.Context, userID uuid.UUID, status string) (*models.User, error) {
+	user := &models.User{}
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE users
+		SET status = $2,
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, name, status, balance_cents, created_at, updated_at
+	`, userID, status).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Status,
+		&user.BalanceCents,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user status: %w", err)
+	}
+	return user, nil
 }

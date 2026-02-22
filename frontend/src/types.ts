@@ -10,6 +10,7 @@ export interface Admin {
 export interface User {
   id: UUID;
   name: string;
+  status: string;
   balance_cents: number;
   created_at: string;
   updated_at: string;
@@ -28,8 +29,13 @@ export interface Policy {
   id: UUID;
   agent_id: UUID;
   daily_limit_cents: number;
+  per_transaction_limit_cents: number;
   allowed_vendors: string[];
+  allowed_mccs: string[];
+  allowed_weekdays_utc: number[];
+  allowed_hours_utc: number[];
   require_approval_above_cents: number;
+  purchase_guideline: string;
   created_at: string;
   updated_at: string;
 }

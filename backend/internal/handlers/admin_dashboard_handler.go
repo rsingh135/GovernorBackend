@@ -48,6 +48,34 @@ func (h *AdminDashboardHandler) GetUser(w http.ResponseWriter, r *http.Request) 
 	httpjson.Write(w, http.StatusOK, map[string]interface{}{"user": user})
 }
 
+func (h *AdminDashboardHandler) FreezeUser(w http.ResponseWriter, r *http.Request) {
+	userID, action, err := parseEntityActionPath(r.URL.Path, "/admin/users/")
+	if err != nil || action != "freeze" {
+		http.Error(w, "invalid user action path", http.StatusBadRequest)
+		return
+	}
+	user, err := h.service.FreezeUser(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, map[string]interface{}{"user": user})
+}
+
+func (h *AdminDashboardHandler) UnfreezeUser(w http.ResponseWriter, r *http.Request) {
+	userID, action, err := parseEntityActionPath(r.URL.Path, "/admin/users/")
+	if err != nil || action != "unfreeze" {
+		http.Error(w, "invalid user action path", http.StatusBadRequest)
+		return
+	}
+	user, err := h.service.UnfreezeUser(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, map[string]interface{}{"user": user})
+}
+
 func (h *AdminDashboardHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	var userID *uuid.UUID
 	if raw := strings.TrimSpace(r.URL.Query().Get("user_id")); raw != "" {
@@ -77,6 +105,34 @@ func (h *AdminDashboardHandler) GetAgent(w http.ResponseWriter, r *http.Request)
 	agent, err := h.service.GetAgent(r.Context(), agentID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, map[string]interface{}{"agent": agent})
+}
+
+func (h *AdminDashboardHandler) FreezeAgent(w http.ResponseWriter, r *http.Request) {
+	agentID, action, err := parseEntityActionPath(r.URL.Path, "/admin/agents/")
+	if err != nil || action != "freeze" {
+		http.Error(w, "invalid agent action path", http.StatusBadRequest)
+		return
+	}
+	agent, err := h.service.FreezeAgent(r.Context(), agentID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	httpjson.Write(w, http.StatusOK, map[string]interface{}{"agent": agent})
+}
+
+func (h *AdminDashboardHandler) UnfreezeAgent(w http.ResponseWriter, r *http.Request) {
+	agentID, action, err := parseEntityActionPath(r.URL.Path, "/admin/agents/")
+	if err != nil || action != "unfreeze" {
+		http.Error(w, "invalid agent action path", http.StatusBadRequest)
+		return
+	}
+	agent, err := h.service.UnfreezeAgent(r.Context(), agentID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	httpjson.Write(w, http.StatusOK, map[string]interface{}{"agent": agent})
@@ -249,6 +305,21 @@ func parseTransactionActionPath(path string) (uuid.UUID, string, error) {
 	}
 
 	return txnID, parts[1], nil
+}
+
+func parseEntityActionPath(path string, prefix string) (uuid.UUID, string, error) {
+	path = strings.TrimPrefix(path, prefix)
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 {
+		return uuid.Nil, "", fmt.Errorf("invalid action path")
+	}
+
+	entityID, err := uuid.Parse(parts[0])
+	if err != nil {
+		return uuid.Nil, "", err
+	}
+
+	return entityID, parts[1], nil
 }
 
 func normalizeTransactions(txs []models.Transaction) []models.Transaction {

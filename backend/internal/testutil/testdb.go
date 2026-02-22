@@ -78,7 +78,7 @@ func SeedTestData(t *testing.T, db *sql.DB) (ranveerUserID, bhangraBotAgentID uu
 		t.Fatalf("Failed to seed Ranveer user: %v", err)
 	}
 
-	// Create BhangraBot agent for Ranveer with API key
+	// Create TigerBot agent for Ranveer with API key
 	bhangraBotAgentID = uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	bhangraBotAPIKey = "sk_test_bhangra_bot_12345"
 	keyHash := apikey.Hash(bhangraBotAPIKey)
@@ -86,18 +86,18 @@ func SeedTestData(t *testing.T, db *sql.DB) (ranveerUserID, bhangraBotAgentID uu
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO agents (id, user_id, name, status, api_key_hash, api_key_prefix, created_at)
 		VALUES ($1, $2, $3, 'active', $4, 'sk_test_bhangr', now())
-	`, bhangraBotAgentID, ranveerUserID, "BhangraBot", keyHash)
+	`, bhangraBotAgentID, ranveerUserID, "TigerBot", keyHash)
 	if err != nil {
-		t.Fatalf("Failed to seed BhangraBot agent: %v", err)
+		t.Fatalf("Failed to seed TigerBot agent: %v", err)
 	}
 
-	// Create policy for BhangraBot: 2000 cents daily limit, only openai.com allowed
+	// Create policy for TigerBot: 2000 cents daily limit, only openai.com allowed
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO policies (agent_id, daily_limit_cents, allowed_vendors, require_approval_above_cents, raw_policy, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, '{}'::jsonb, now(), now())
 	`, bhangraBotAgentID, 2000, pq.Array([]string{"openai.com"}), 1500)
 	if err != nil {
-		t.Fatalf("Failed to seed BhangraBot policy: %v", err)
+		t.Fatalf("Failed to seed TigerBot policy: %v", err)
 	}
 
 	return ranveerUserID, bhangraBotAgentID, bhangraBotAPIKey

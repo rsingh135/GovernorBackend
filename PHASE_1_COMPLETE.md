@@ -178,7 +178,7 @@ curl -X POST http://localhost:8080/agents \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "<USER_ID>",
-    "name": "BhangraBot"
+    "name": "TigerBot"
   }'
 ```
 
@@ -187,7 +187,7 @@ curl -X POST http://localhost:8080/agents \
 {
   "id": "...",
   "user_id": "...",
-  "name": "BhangraBot",
+  "name": "TigerBot",
   "status": "active",
   "api_key": "sk_agent_...",  // ⚠️ Only shown once!
   "created_at": "..."

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"agentpay/internal/middleware"
 	"agentpay/internal/models"
@@ -292,6 +293,278 @@ func TestSpendHandler_InsufficientBalance(t *testing.T) {
 	}
 
 	t.Logf("✅ Insufficient balance test passed. Balance unchanged: %d cents", finalBalance)
+}
+
+func TestSpendHandler_PerTransactionLimitExceeded(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
+
+	_, err := db.Exec(`UPDATE policies SET per_transaction_limit_cents = 700`)
+	if err != nil {
+		t.Fatalf("Failed to update per transaction limit: %v", err)
+	}
+
+	spendService := services.NewSpendService(db)
+	agentService := services.NewAgentService(db)
+	authMW := middleware.NewAuthMiddleware(agentService)
+	handler := NewSpendHandler(spendService)
+
+	reqBody := models.SpendRequest{
+		RequestID: uuid.New(),
+		Amount:    800,
+		Vendor:    "openai.com",
+		Meta:      map[string]interface{}{},
+	}
+
+	req := makeSpendRequest(t, reqBody, bhangraBotAPIKey)
+	rr := httptest.NewRecorder()
+	authMW.Authenticate(handler.Spend)(rr, req)
+
+	var resp models.SpendResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if resp.Status != "denied" {
+		t.Errorf("Expected status 'denied', got '%s'", resp.Status)
+	}
+	if resp.Reason != "per_transaction_limit_exceeded" {
+		t.Errorf("Expected reason 'per_transaction_limit_exceeded', got '%s'", resp.Reason)
+	}
+
+	finalBalance := testutil.GetUserBalance(t, db, ranveerUserID)
+	if finalBalance != 5000 {
+		t.Errorf("Expected balance unchanged at 5000, got %d", finalBalance)
+	}
+}
+
+func TestSpendHandler_MCCNotAllowed(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
+
+	_, err := db.Exec(`UPDATE policies SET allowed_mccs = ARRAY['5734']::text[]`)
+	if err != nil {
+		t.Fatalf("Failed to update MCC allowlist: %v", err)
+	}
+
+	spendService := services.NewSpendService(db)
+	agentService := services.NewAgentService(db)
+	authMW := middleware.NewAuthMiddleware(agentService)
+	handler := NewSpendHandler(spendService)
+
+	reqBody := models.SpendRequest{
+		RequestID: uuid.New(),
+		Amount:    500,
+		Vendor:    "openai.com",
+		MCC:       "5815",
+		Meta:      map[string]interface{}{},
+	}
+
+	req := makeSpendRequest(t, reqBody, bhangraBotAPIKey)
+	rr := httptest.NewRecorder()
+	authMW.Authenticate(handler.Spend)(rr, req)
+
+	var resp models.SpendResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if resp.Status != "denied" {
+		t.Errorf("Expected status 'denied', got '%s'", resp.Status)
+	}
+	if resp.Reason != "mcc_not_allowed" {
+		t.Errorf("Expected reason 'mcc_not_allowed', got '%s'", resp.Reason)
+	}
+
+	finalBalance := testutil.GetUserBalance(t, db, ranveerUserID)
+	if finalBalance != 5000 {
+		t.Errorf("Expected balance unchanged at 5000, got %d", finalBalance)
+	}
+}
+
+func TestSpendHandler_OutsideAllowedTimeWindow(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
+
+	now := time.Now().UTC()
+	nonMatchingDay := (int(now.Weekday()) + 1) % 7
+	_, err := db.Exec(`UPDATE policies SET allowed_weekdays_utc = ARRAY[$1]::integer[]`, nonMatchingDay)
+	if err != nil {
+		t.Fatalf("Failed to update allowed weekdays: %v", err)
+	}
+
+	spendService := services.NewSpendService(db)
+	agentService := services.NewAgentService(db)
+	authMW := middleware.NewAuthMiddleware(agentService)
+	handler := NewSpendHandler(spendService)
+
+	reqBody := models.SpendRequest{
+		RequestID: uuid.New(),
+		Amount:    500,
+		Vendor:    "openai.com",
+		Meta:      map[string]interface{}{},
+	}
+
+	req := makeSpendRequest(t, reqBody, bhangraBotAPIKey)
+	rr := httptest.NewRecorder()
+	authMW.Authenticate(handler.Spend)(rr, req)
+
+	var resp models.SpendResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if resp.Status != "denied" {
+		t.Errorf("Expected status 'denied', got '%s'", resp.Status)
+	}
+	if resp.Reason != "outside_allowed_time_window" {
+		t.Errorf("Expected reason 'outside_allowed_time_window', got '%s'", resp.Reason)
+	}
+
+	finalBalance := testutil.GetUserBalance(t, db, ranveerUserID)
+	if finalBalance != 5000 {
+		t.Errorf("Expected balance unchanged at 5000, got %d", finalBalance)
+	}
+}
+
+func TestSpendHandler_OrganizationFrozen(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
+
+	_, err := db.Exec(`UPDATE users SET status = 'frozen'`)
+	if err != nil {
+		t.Fatalf("Failed to freeze user: %v", err)
+	}
+
+	spendService := services.NewSpendService(db)
+	agentService := services.NewAgentService(db)
+	authMW := middleware.NewAuthMiddleware(agentService)
+	handler := NewSpendHandler(spendService)
+
+	reqBody := models.SpendRequest{
+		RequestID: uuid.New(),
+		Amount:    500,
+		Vendor:    "openai.com",
+		Meta:      map[string]interface{}{},
+	}
+
+	req := makeSpendRequest(t, reqBody, bhangraBotAPIKey)
+	rr := httptest.NewRecorder()
+	authMW.Authenticate(handler.Spend)(rr, req)
+
+	var resp models.SpendResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if resp.Status != "denied" {
+		t.Errorf("Expected status 'denied', got '%s'", resp.Status)
+	}
+	if resp.Reason != "organization_frozen" {
+		t.Errorf("Expected reason 'organization_frozen', got '%s'", resp.Reason)
+	}
+
+	finalBalance := testutil.GetUserBalance(t, db, ranveerUserID)
+	if finalBalance != 5000 {
+		t.Errorf("Expected balance unchanged at 5000, got %d", finalBalance)
+	}
+}
+
+// TestSpendHandler_GuidelineMismatch tests denying spend when vendor doesn't match policy guideline.
+func TestSpendHandler_GuidelineMismatch(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
+
+	_, err := db.Exec(`UPDATE policies SET purchase_guideline = 'legal filings and accounting services only'`)
+	if err != nil {
+		t.Fatalf("Failed to update purchase guideline: %v", err)
+	}
+
+	spendService := services.NewSpendService(db)
+	agentService := services.NewAgentService(db)
+	authMW := middleware.NewAuthMiddleware(agentService)
+	handler := NewSpendHandler(spendService)
+
+	reqBody := models.SpendRequest{
+		RequestID: uuid.New(),
+		Amount:    500,
+		Vendor:    "openai.com",
+		Meta:      map[string]interface{}{},
+	}
+
+	req := makeSpendRequest(t, reqBody, bhangraBotAPIKey)
+	rr := httptest.NewRecorder()
+	authMW.Authenticate(handler.Spend)(rr, req)
+
+	var resp models.SpendResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if resp.Status != "denied" {
+		t.Errorf("Expected status 'denied', got '%s'", resp.Status)
+	}
+	if resp.Reason != "guideline_mismatch" {
+		t.Errorf("Expected reason 'guideline_mismatch', got '%s'", resp.Reason)
+	}
+
+	finalBalance := testutil.GetUserBalance(t, db, ranveerUserID)
+	if finalBalance != 5000 {
+		t.Errorf("Expected balance unchanged at 5000, got %d", finalBalance)
+	}
+}
+
+// TestSpendHandler_GuidelineRelevant tests allowing spend when guideline aligns with vendor domain intent.
+func TestSpendHandler_GuidelineRelevant(t *testing.T) {
+	db, cleanup := testutil.SetupTestDB(t)
+	defer cleanup()
+
+	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
+
+	_, err := db.Exec(`UPDATE policies SET purchase_guideline = 'AI and LLM tooling for engineering productivity'`)
+	if err != nil {
+		t.Fatalf("Failed to update purchase guideline: %v", err)
+	}
+
+	spendService := services.NewSpendService(db)
+	agentService := services.NewAgentService(db)
+	authMW := middleware.NewAuthMiddleware(agentService)
+	handler := NewSpendHandler(spendService)
+
+	reqBody := models.SpendRequest{
+		RequestID: uuid.New(),
+		Amount:    500,
+		Vendor:    "openai.com",
+		Meta:      map[string]interface{}{},
+	}
+
+	req := makeSpendRequest(t, reqBody, bhangraBotAPIKey)
+	rr := httptest.NewRecorder()
+	authMW.Authenticate(handler.Spend)(rr, req)
+
+	var resp models.SpendResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if resp.Status != "approved" {
+		t.Errorf("Expected status 'approved', got '%s' with reason '%s'", resp.Status, resp.Reason)
+	}
+
+	finalBalance := testutil.GetUserBalance(t, db, ranveerUserID)
+	if finalBalance != 4500 {
+		t.Errorf("Expected balance 4500 after approved spend, got %d", finalBalance)
+	}
 }
 
 // Helper functions

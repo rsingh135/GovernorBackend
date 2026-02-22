@@ -218,3 +218,45 @@ func (r *AgentRepository) List(ctx context.Context, userID *uuid.UUID, limit int
 
 	return agents, nil
 }
+
+// UpdateStatus sets agent status to active/frozen.
+func (r *AgentRepository) UpdateStatus(ctx context.Context, agentID uuid.UUID, status string) (*models.Agent, error) {
+	agent := &models.Agent{}
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE agents
+		SET status = $2
+		WHERE id = $1
+		RETURNING id, user_id, name, status, api_key_prefix, created_at
+	`, agentID, status).Scan(
+		&agent.ID,
+		&agent.UserID,
+		&agent.Name,
+		&agent.Status,
+		&agent.APIKeyPrefix,
+		&agent.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to update agent status: %w", err)
+	}
+	return agent, nil
+}
+
+// UpdateStatusByUserID updates all agents for a user.
+func (r *AgentRepository) UpdateStatusByUserID(ctx context.Context, userID uuid.UUID, status string) (int64, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE agents
+		SET status = $2
+		WHERE user_id = $1
+	`, userID, status)
+	if err != nil {
+		return 0, fmt.Errorf("failed to update agents by user: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected for agent status update: %w", err)
+	}
+	return rows, nil
+}

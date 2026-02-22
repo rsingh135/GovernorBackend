@@ -12,6 +12,7 @@ import (
 	"agentpay/internal/handlers"
 	"agentpay/internal/middleware"
 	"agentpay/internal/payments"
+	"agentpay/internal/repository"
 	"agentpay/internal/services"
 )
 
@@ -43,6 +44,7 @@ func main() {
 	agentHandler := handlers.NewAgentHandler(agentService)
 	policyHandler := handlers.NewPolicyHandler(policyService)
 	spendHandler := handlers.NewSpendHandler(spendService)
+	proxyHandler := handlers.NewProxyHandler(repository.NewPolicyRepository(database.DB))
 	adminAuthHandler := handlers.NewAdminAuthHandler(adminAuthService)
 	adminDashboardService := services.NewAdminDashboardServiceWithProvider(database.DB, paymentProvider)
 	adminDashboardHandler := handlers.NewAdminDashboardHandler(adminDashboardService)
@@ -69,6 +71,14 @@ func main() {
 	mux.HandleFunc("/policies", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			policyHandler.UpsertPolicy(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	mux.HandleFunc("/proxy/browse", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			spendRateLimiter.Limit(authMiddleware.Authenticate(proxyHandler.Browse))(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -111,6 +121,16 @@ func main() {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetUser)(w, r)
 			return
 		}
+		if r.Method == http.MethodPost {
+			if strings.HasSuffix(r.URL.Path, "/freeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.FreezeUser)(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/unfreeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.UnfreezeUser)(w, r)
+				return
+			}
+		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
@@ -131,12 +151,26 @@ func main() {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetAgent)(w, r)
 			return
 		}
+		if r.Method == http.MethodPost {
+			if strings.HasSuffix(r.URL.Path, "/freeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.FreezeAgent)(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/unfreeze") {
+				adminAuthMiddleware.Authenticate(adminDashboardHandler.UnfreezeAgent)(w, r)
+				return
+			}
+		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
 	mux.HandleFunc("/admin/policies", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			adminAuthMiddleware.Authenticate(adminDashboardHandler.GetPolicyByAgent)(w, r)
+			return
+		}
+		if r.Method == http.MethodPost {
+			adminAuthMiddleware.Authenticate(policyHandler.UpsertPolicy)(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
