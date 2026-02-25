@@ -11,6 +11,7 @@ import (
 	"agentpay/internal/repository"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 // SpendService handles the core spending engine logic.
@@ -42,12 +43,23 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		req.Meta = make(map[string]interface{})
 	}
 
+	log.Debug().
+		Str("agent_id", agent.ID.String()).
+		Str("request_id", req.RequestID.String()).
+		Str("vendor", req.Vendor).
+		Int64("amount_cents", req.Amount).
+		Msg("processing spend request")
+
 	// Idempotency check (outside transaction for performance)
 	existingTxn, err := s.txnRepo.GetByRequestID(ctx, req.RequestID)
 	if err != nil {
 		return nil, err
 	}
 	if existingTxn != nil {
+		log.Info().
+			Str("request_id", req.RequestID.String()).
+			Str("status", existingTxn.Status).
+			Msg("idempotent spend request")
 		return s.transactionToResponse(existingTxn), nil
 	}
 
@@ -172,6 +184,15 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	log.Info().
+		Str("agent_id", agent.ID.String()).
+		Str("request_id", req.RequestID.String()).
+		Str("transaction_id", txn.ID.String()).
+		Str("status", txn.Status).
+		Str("vendor", req.Vendor).
+		Int64("amount_cents", req.Amount).
+		Msg("spend processed")
 
 	return s.transactionToResponse(txn), nil
 }

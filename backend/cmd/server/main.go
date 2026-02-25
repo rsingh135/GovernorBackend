@@ -7,11 +7,15 @@ import (
 
 	"agentpay/internal/db"
 	"agentpay/internal/handlers"
+	"agentpay/internal/logger"
 	"agentpay/internal/middleware"
 	"agentpay/internal/services"
 )
 
 func main() {
+	// Initialize structured logger
+	logger.Init()
+
 	// Initialize database connection
 	database, err := db.NewDB()
 	if err != nil {
@@ -129,7 +133,7 @@ func main() {
 	log.Println("   GET  /transactions   - List transactions (authenticated)")
 	log.Println("   GET  /health         - Health check")
 
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(":"+port, middleware.RequestLogger(mux)); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
