@@ -6,6 +6,8 @@ import (
 	"agentpay/internal/httpjson"
 	"agentpay/internal/models"
 	"agentpay/internal/services"
+
+	"github.com/google/uuid"
 )
 
 // UserHandler handles user-related HTTP requests.
@@ -44,4 +46,32 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpjson.Write(w, http.StatusCreated, resp)
+}
+
+// GetUser handles GET /users/:id.
+func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	// Extract ID from path /users/:id
+	idStr := r.URL.Path[len("/users/"):]
+	if idStr == "" {
+		http.Error(w, "user ID required", http.StatusBadRequest)
+		return
+	}
+
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.userService.GetUser(r.Context(), id)
+	if err != nil {
+		if err.Error() == "user not found" {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	httpjson.Write(w, http.StatusOK, user)
 }

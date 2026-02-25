@@ -143,3 +143,98 @@ func (r *AgentRepository) LockAgentForUpdate(ctx context.Context, tx *sql.Tx, ag
 
 	return status, nil
 }
+
+// List retrieves paginated agents with filters.
+func (r *AgentRepository) List(
+	ctx context.Context,
+	filters models.AgentFilters,
+	pagination models.PaginationParams,
+) ([]models.Agent, error) {
+	query := `
+		SELECT id, user_id, name, status, api_key_prefix, created_at
+		FROM agents
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	// Apply filters
+	if filters.UserID != nil {
+		query += fmt.Sprintf(" AND user_id = $%d", argIdx)
+		args = append(args, *filters.UserID)
+		argIdx++
+	}
+
+	if filters.Status != nil {
+		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		args = append(args, *filters.Status)
+		argIdx++
+	}
+
+	// Order by newest first
+	query += " ORDER BY created_at DESC"
+
+	// Apply pagination
+	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
+	args = append(args, pagination.Limit, pagination.Offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+	defer rows.Close()
+
+	agents := []models.Agent{}
+	for rows.Next() {
+		agent := models.Agent{}
+		err := rows.Scan(
+			&agent.ID,
+			&agent.UserID,
+			&agent.Name,
+			&agent.Status,
+			&agent.APIKeyPrefix,
+			&agent.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan agent: %w", err)
+		}
+		agents = append(agents, agent)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return agents, nil
+}
+
+// Count returns total count of agents matching filters.
+func (r *AgentRepository) Count(
+	ctx context.Context,
+	filters models.AgentFilters,
+) (int64, error) {
+	query := `SELECT COUNT(*) FROM agents WHERE 1=1`
+	args := []interface{}{}
+	argIdx := 1
+
+	// Apply same filters as List
+	if filters.UserID != nil {
+		query += fmt.Sprintf(" AND user_id = $%d", argIdx)
+		args = append(args, *filters.UserID)
+		argIdx++
+	}
+
+	if filters.Status != nil {
+		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		args = append(args, *filters.Status)
+		argIdx++
+	}
+
+	var count int64
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count agents: %w", err)
+	}
+
+	return count, nil
+}

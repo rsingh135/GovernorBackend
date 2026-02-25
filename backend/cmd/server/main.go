@@ -26,6 +26,7 @@ func main() {
 	agentService := services.NewAgentService(database.DB)
 	policyService := services.NewPolicyService(database.DB)
 	spendService := services.NewSpendService(database.DB)
+	transactionService := services.NewTransactionService(database.DB)
 
 	log.Println("✅ Services initialized")
 
@@ -37,6 +38,7 @@ func main() {
 	agentHandler := handlers.NewAgentHandler(agentService)
 	policyHandler := handlers.NewPolicyHandler(policyService)
 	spendHandler := handlers.NewSpendHandler(spendService)
+	transactionHandler := handlers.NewTransactionHandler(transactionService)
 
 	log.Println("✅ Handlers initialized")
 
@@ -52,9 +54,22 @@ func main() {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
+	// GET /users/:id
+	mux.HandleFunc("/users/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			userHandler.GetUser(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
 	mux.HandleFunc("/agents", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			agentHandler.CreateAgent(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			agentHandler.ListAgents(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -63,6 +78,15 @@ func main() {
 	mux.HandleFunc("/policies", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			policyHandler.UpsertPolicy(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	// GET /policies/:agent_id (authenticated)
+	mux.HandleFunc("/policies/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			authMiddleware.Authenticate(policyHandler.GetPolicy)(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -77,6 +101,15 @@ func main() {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
+	// GET /transactions (authenticated)
+	mux.HandleFunc("/transactions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			authMiddleware.Authenticate(transactionHandler.ListTransactions)(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -86,11 +119,15 @@ func main() {
 	port := getEnv("PORT", "8080")
 	log.Printf("🚀 Governor API server starting on port %s", port)
 	log.Println("📋 Available endpoints:")
-	log.Println("   POST /users      - Create user account")
-	log.Println("   POST /agents     - Provision agent")
-	log.Println("   POST /policies   - Manage spending policies")
-	log.Println("   POST /spend      - Process spending request (authenticated)")
-	log.Println("   GET  /health     - Health check")
+	log.Println("   POST /users          - Create user account")
+	log.Println("   GET  /users/:id      - Get user by ID")
+	log.Println("   POST /agents         - Provision agent")
+	log.Println("   GET  /agents         - List agents (with filters)")
+	log.Println("   POST /policies       - Manage spending policies")
+	log.Println("   GET  /policies/:id   - Get policy by agent ID (authenticated)")
+	log.Println("   POST /spend          - Process spending request (authenticated)")
+	log.Println("   GET  /transactions   - List transactions (authenticated)")
+	log.Println("   GET  /health         - Health check")
 
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("Server failed: %v", err)

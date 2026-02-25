@@ -6,6 +6,8 @@ import (
 
 	"agentpay/internal/models"
 	"agentpay/internal/repository"
+
+	"github.com/google/uuid"
 )
 
 // UserService handles user business logic.
@@ -33,4 +35,9 @@ func (s *UserService) CreateUser(ctx context.Context, name string, initialBalanc
 		BalanceCents: user.BalanceCents,
 		CreatedAt:    user.CreatedAt,
 	}, nil
+}
+
+// GetUser retrieves a user by ID.
+func (s *UserService) GetUser(ctx context.Context, userID uuid.UUID) (*models.User, error) {
+	return s.userRepo.GetByID(ctx, userID)
 }

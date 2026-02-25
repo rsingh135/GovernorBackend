@@ -138,3 +138,133 @@ func (r *TransactionRepository) GetTodaySpendForAgent(ctx context.Context, tx *s
 
 	return totalSpent, nil
 }
+
+// List retrieves paginated transactions with filters.
+func (r *TransactionRepository) List(
+	ctx context.Context,
+	filters models.TransactionFilters,
+	pagination models.PaginationParams,
+) ([]models.Transaction, error) {
+	query := `
+		SELECT id, request_id, agent_id, amount_cents, currency, vendor, status, reason, meta, created_at
+		FROM transactions
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	// Apply filters
+	if filters.AgentID != nil {
+		query += fmt.Sprintf(" AND agent_id = $%d", argIdx)
+		args = append(args, *filters.AgentID)
+		argIdx++
+	}
+
+	if filters.Status != nil {
+		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		args = append(args, *filters.Status)
+		argIdx++
+	}
+
+	if filters.FromDate != nil {
+		query += fmt.Sprintf(" AND created_at >= $%d", argIdx)
+		args = append(args, *filters.FromDate)
+		argIdx++
+	}
+
+	if filters.ToDate != nil {
+		query += fmt.Sprintf(" AND created_at <= $%d", argIdx)
+		args = append(args, *filters.ToDate)
+		argIdx++
+	}
+
+	// Order by newest first
+	query += " ORDER BY created_at DESC"
+
+	// Apply pagination
+	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
+	args = append(args, pagination.Limit, pagination.Offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list transactions: %w", err)
+	}
+	defer rows.Close()
+
+	transactions := []models.Transaction{}
+	for rows.Next() {
+		txn := models.Transaction{}
+		var metaBytes []byte
+
+		err := rows.Scan(
+			&txn.ID,
+			&txn.RequestID,
+			&txn.AgentID,
+			&txn.AmountCents,
+			&txn.Currency,
+			&txn.Vendor,
+			&txn.Status,
+			&txn.Reason,
+			&metaBytes,
+			&txn.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+
+		if err := json.Unmarshal(metaBytes, &txn.Meta); err != nil {
+			txn.Meta = make(map[string]interface{})
+		}
+
+		transactions = append(transactions, txn)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return transactions, nil
+}
+
+// Count returns total count of transactions matching filters.
+func (r *TransactionRepository) Count(
+	ctx context.Context,
+	filters models.TransactionFilters,
+) (int64, error) {
+	query := `SELECT COUNT(*) FROM transactions WHERE 1=1`
+	args := []interface{}{}
+	argIdx := 1
+
+	// Apply same filters as List
+	if filters.AgentID != nil {
+		query += fmt.Sprintf(" AND agent_id = $%d", argIdx)
+		args = append(args, *filters.AgentID)
+		argIdx++
+	}
+
+	if filters.Status != nil {
+		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		args = append(args, *filters.Status)
+		argIdx++
+	}
+
+	if filters.FromDate != nil {
+		query += fmt.Sprintf(" AND created_at >= $%d", argIdx)
+		args = append(args, *filters.FromDate)
+		argIdx++
+	}
+
+	if filters.ToDate != nil {
+		query += fmt.Sprintf(" AND created_at <= $%d", argIdx)
+		args = append(args, *filters.ToDate)
+		argIdx++
+	}
+
+	var count int64
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count transactions: %w", err)
+	}
+
+	return count, nil
+}

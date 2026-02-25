@@ -6,6 +6,8 @@ import (
 
 	"agentpay/internal/models"
 	"agentpay/internal/repository"
+
+	"github.com/google/uuid"
 )
 
 // PolicyService handles policy business logic.
@@ -31,4 +33,9 @@ func (s *PolicyService) UpsertPolicy(ctx context.Context, req *models.UpsertPoli
 	}
 
 	return s.policyRepo.Upsert(ctx, req)
+}
+
+// GetPolicyByAgentID retrieves a policy by agent ID.
+func (s *PolicyService) GetPolicyByAgentID(ctx context.Context, agentID uuid.UUID) (*models.Policy, error) {
+	return s.policyRepo.GetByAgentID(ctx, agentID)
 }

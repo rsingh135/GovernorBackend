@@ -32,3 +32,9 @@ type CreateAgentResponse struct {
 	APIKey    string    `json:"api_key"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// ListAgentsResponse is the response for GET /agents.
+type ListAgentsResponse struct {
+	Agents []Agent `json:"agents"`
+	PaginatedResponse
+}

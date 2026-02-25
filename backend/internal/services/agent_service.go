@@ -52,3 +52,31 @@ func (s *AgentService) CreateAgent(ctx context.Context, userID uuid.UUID, name s
 func (s *AgentService) AuthenticateAgent(ctx context.Context, apiKey string) (*models.Agent, error) {
 	return s.agentRepo.GetByAPIKey(ctx, apiKey)
 }
+
+// ListAgents retrieves paginated agents with filters.
+func (s *AgentService) ListAgents(
+	ctx context.Context,
+	filters models.AgentFilters,
+	pagination models.PaginationParams,
+) (*models.ListAgentsResponse, error) {
+	// Get agents
+	agents, err := s.agentRepo.List(ctx, filters, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get total count
+	total, err := s.agentRepo.Count(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.ListAgentsResponse{
+		Agents: agents,
+		PaginatedResponse: models.PaginatedResponse{
+			Total:  total,
+			Limit:  pagination.Limit,
+			Offset: pagination.Offset,
+		},
+	}, nil
+}

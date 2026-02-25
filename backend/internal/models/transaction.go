@@ -33,3 +33,9 @@ type SpendResponse struct {
 	Status string `json:"status"` // "approved" | "pending_approval" | "denied"
 	Reason string `json:"reason"`
 }
+
+// ListTransactionsResponse is the response for GET /transactions.
+type ListTransactionsResponse struct {
+	Transactions []Transaction `json:"transactions"`
+	PaginatedResponse
+}

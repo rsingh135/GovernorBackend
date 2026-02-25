@@ -52,3 +52,31 @@ func (h *PolicyHandler) UpsertPolicy(w http.ResponseWriter, r *http.Request) {
 
 	httpjson.Write(w, http.StatusOK, resp)
 }
+
+// GetPolicy handles GET /policies/:agent_id.
+func (h *PolicyHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
+	// Extract agent_id from path /policies/:agent_id
+	agentIDStr := r.URL.Path[len("/policies/"):]
+	if agentIDStr == "" {
+		http.Error(w, "agent_id required", http.StatusBadRequest)
+		return
+	}
+
+	agentID, err := uuid.Parse(agentIDStr)
+	if err != nil {
+		http.Error(w, "invalid agent_id", http.StatusBadRequest)
+		return
+	}
+
+	policy, err := h.policyService.GetPolicyByAgentID(r.Context(), agentID)
+	if err != nil {
+		if err.Error() == "policy not found" {
+			http.Error(w, "policy not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	httpjson.Write(w, http.StatusOK, policy)
+}
