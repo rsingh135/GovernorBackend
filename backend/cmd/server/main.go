@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"agentpay/internal/db"
 	"agentpay/internal/handlers"
 	"agentpay/internal/logger"
 	"agentpay/internal/middleware"
 	"agentpay/internal/services"
+
+	"github.com/rs/zerolog"
 )
 
 func main() {
@@ -30,9 +34,10 @@ func main() {
 	userService := services.NewUserService(database.DB)
 	agentService := services.NewAgentService(database.DB)
 	policyService := services.NewPolicyService(database.DB)
-	spendService := services.NewSpendService(database.DB)
+	webhookService := services.NewWebhookService(database.DB)
+	spendService := services.NewSpendService(database.DB, webhookService)
 	transactionService := services.NewTransactionService(database.DB)
-	approvalService := services.NewApprovalService(database.DB)
+	approvalService := services.NewApprovalService(database.DB, webhookService)
 
 	log.Println("✅ Services initialized")
 
@@ -48,8 +53,27 @@ func main() {
 	spendHandler := handlers.NewSpendHandler(spendService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService)
 	approvalHandler := handlers.NewApprovalHandler(approvalService)
+	webhookHandler := handlers.NewWebhookHandler(webhookService)
 
 	log.Println("✅ Handlers initialized")
+
+	// Start webhook delivery background worker
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := webhookService.ProcessPendingDeliveries(workerCtx); err != nil {
+					zerolog.Ctx(workerCtx).Error().Err(err).Msg("webhook delivery worker error")
+				}
+			case <-workerCtx.Done():
+				return
+			}
+		}
+	}()
 
 	// Setup routes
 	mux := http.NewServeMux()
@@ -136,6 +160,27 @@ func main() {
 		}
 	})
 
+	// Webhook routes (authenticated)
+	mux.HandleFunc("/webhooks", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			authMiddleware.Authenticate(apiKeyLimiter.LimitByAPIKey(webhookHandler.Register))(w, r)
+		case http.MethodGet:
+			authMiddleware.Authenticate(apiKeyLimiter.LimitByAPIKey(webhookHandler.List))(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// DELETE /webhooks/:id (authenticated)
+	mux.HandleFunc("/webhooks/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			authMiddleware.Authenticate(apiKeyLimiter.LimitByAPIKey(webhookHandler.Delete))(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -155,6 +200,9 @@ func main() {
 	log.Println("   GET  /transactions               - List transactions (authenticated)")
 	log.Println("   POST /transactions/:id/approve   - Approve pending transaction")
 	log.Println("   POST /transactions/:id/deny      - Deny pending transaction")
+	log.Println("   POST /webhooks                   - Register webhook (authenticated)")
+	log.Println("   GET  /webhooks                   - List webhooks (authenticated)")
+	log.Println("   DELETE /webhooks/:id             - Delete webhook (authenticated)")
 	log.Println("   GET  /health                     - Health check")
 
 	if err := http.ListenAndServe(":"+port, middleware.RequestLogger(mux)); err != nil {

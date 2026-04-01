@@ -16,21 +16,23 @@ import (
 
 // SpendService handles the core spending engine logic.
 type SpendService struct {
-	db          *sql.DB
-	userRepo    *repository.UserRepository
-	agentRepo   *repository.AgentRepository
-	policyRepo  *repository.PolicyRepository
-	txnRepo     *repository.TransactionRepository
+	db             *sql.DB
+	userRepo       *repository.UserRepository
+	agentRepo      *repository.AgentRepository
+	policyRepo     *repository.PolicyRepository
+	txnRepo        *repository.TransactionRepository
+	webhookService *WebhookService
 }
 
 // NewSpendService creates a new spend service.
-func NewSpendService(db *sql.DB) *SpendService {
+func NewSpendService(db *sql.DB, webhookService *WebhookService) *SpendService {
 	return &SpendService{
-		db:         db,
-		userRepo:   repository.NewUserRepository(db),
-		agentRepo:  repository.NewAgentRepository(db),
-		policyRepo: repository.NewPolicyRepository(db),
-		txnRepo:    repository.NewTransactionRepository(db),
+		db:             db,
+		userRepo:       repository.NewUserRepository(db),
+		agentRepo:      repository.NewAgentRepository(db),
+		policyRepo:     repository.NewPolicyRepository(db),
+		txnRepo:        repository.NewTransactionRepository(db),
+		webhookService: webhookService,
 	}
 }
 
@@ -93,6 +95,7 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
 			return nil, err
 		}
+		_ = s.webhookService.EnqueueDeliveries(txCtx, tx, txn, "transaction.denied")
 		_ = tx.Commit()
 		return s.transactionToResponse(txn), nil
 	}
@@ -107,6 +110,7 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
 			return nil, err
 		}
+		_ = s.webhookService.EnqueueDeliveries(txCtx, tx, txn, "transaction.denied")
 		_ = tx.Commit()
 		return s.transactionToResponse(txn), nil
 	}
@@ -118,6 +122,7 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
 			return nil, err
 		}
+		_ = s.webhookService.EnqueueDeliveries(txCtx, tx, txn, "transaction.denied")
 		_ = tx.Commit()
 		return s.transactionToResponse(txn), nil
 	}
@@ -134,6 +139,7 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
 			return nil, err
 		}
+		_ = s.webhookService.EnqueueDeliveries(txCtx, tx, txn, "transaction.denied")
 		_ = tx.Commit()
 		return s.transactionToResponse(txn), nil
 	}
@@ -143,6 +149,7 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 		if err := s.txnRepo.Create(txCtx, tx, txn); err != nil {
 			return nil, err
 		}
+		_ = s.webhookService.EnqueueDeliveries(txCtx, tx, txn, "transaction.denied")
 		_ = tx.Commit()
 		return s.transactionToResponse(txn), nil
 	}
@@ -177,6 +184,14 @@ func (s *SpendService) ProcessSpend(ctx context.Context, agent *models.Agent, re
 	if status == "APPROVED" {
 		if err := s.userRepo.DeductBalance(txCtx, tx, agent.UserID, req.Amount); err != nil {
 			return nil, err
+		}
+	}
+
+	// Enqueue webhook deliveries for terminal statuses (not PENDING_APPROVAL)
+	if status == "APPROVED" || status == "DENIED" {
+		event := "transaction." + strings.ToLower(status)
+		if err := s.webhookService.EnqueueDeliveries(txCtx, tx, txn, event); err != nil {
+			return nil, fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
 		}
 	}
 

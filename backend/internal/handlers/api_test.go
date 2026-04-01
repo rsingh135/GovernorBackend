@@ -23,7 +23,7 @@ func TestSpendHandler_SuccessfulSpend(t *testing.T) {
 	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
 
 	// Initialize services and handlers
-	spendService := services.NewSpendService(db)
+	spendService := services.NewSpendService(db, services.NewWebhookService(db))
 	agentService := services.NewAgentService(db)
 	authMW := middleware.NewAuthMiddleware(agentService)
 	handler := NewSpendHandler(spendService)
@@ -73,7 +73,7 @@ func TestSpendHandler_ExceedsDailyLimit(t *testing.T) {
 
 	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
 
-	spendService := services.NewSpendService(db)
+	spendService := services.NewSpendService(db, services.NewWebhookService(db))
 	agentService := services.NewAgentService(db)
 	authMW := middleware.NewAuthMiddleware(agentService)
 	handler := NewSpendHandler(spendService)
@@ -129,7 +129,7 @@ func TestSpendHandler_UnauthorizedVendor(t *testing.T) {
 
 	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
 
-	spendService := services.NewSpendService(db)
+	spendService := services.NewSpendService(db, services.NewWebhookService(db))
 	agentService := services.NewAgentService(db)
 	authMW := middleware.NewAuthMiddleware(agentService)
 	handler := NewSpendHandler(spendService)
@@ -175,7 +175,7 @@ func TestSpendHandler_Idempotency(t *testing.T) {
 
 	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
 
-	spendService := services.NewSpendService(db)
+	spendService := services.NewSpendService(db, services.NewWebhookService(db))
 	agentService := services.NewAgentService(db)
 	authMW := middleware.NewAuthMiddleware(agentService)
 	handler := NewSpendHandler(spendService)
@@ -255,7 +255,7 @@ func TestSpendHandler_InsufficientBalance(t *testing.T) {
 
 	ranveerUserID, _, bhangraBotAPIKey := testutil.SeedTestData(t, db)
 
-	spendService := services.NewSpendService(db)
+	spendService := services.NewSpendService(db, services.NewWebhookService(db))
 	agentService := services.NewAgentService(db)
 	authMW := middleware.NewAuthMiddleware(agentService)
 	handler := NewSpendHandler(spendService)
