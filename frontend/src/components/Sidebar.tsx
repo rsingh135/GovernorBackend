@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { SettingsModal } from './SettingsModal';
+import { DEMO_KEY } from '@/lib/mockData';
 
 const navItems = [
   {
@@ -49,12 +50,15 @@ export function Sidebar() {
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
 
   useEffect(() => {
     async function fetchPending() {
       try {
         const settings = JSON.parse(localStorage.getItem('governor_settings') || '{}');
+        setIsDemo(settings.apiKey === DEMO_KEY);
         if (!settings.apiKey) return;
+        if (settings.apiKey === DEMO_KEY) { setPendingCount(3); return; }
         const base = settings.apiBaseUrl || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
         const res = await fetch(`${base}/transactions?status=PENDING_APPROVAL&limit=1`, {
           headers: { 'X-API-Key': settings.apiKey },
@@ -87,6 +91,13 @@ export function Sidebar() {
             <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>Governor</span>
           </div>
         </div>
+
+        {/* Demo banner */}
+        {isDemo && (
+          <div className="mx-3 mt-3 px-3 py-2 rounded-lg text-xs text-center font-medium" style={{ background: 'rgba(62,130,255,0.1)', color: 'var(--accent)', border: '1px solid rgba(62,130,255,0.2)' }}>
+            Demo mode
+          </div>
+        )}
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">

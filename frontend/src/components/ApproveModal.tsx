@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Transaction } from '@/lib/types';
-import { formatCents } from '@/lib/api';
+import { formatCents, isDemoMode } from '@/lib/api';
 import { Badge } from './Badge';
 
 interface ApproveModalProps {
@@ -61,7 +61,7 @@ export function ApproveModal({ transaction, action, approverUserId, onConfirm, o
           <Row label="Reason" value={<span style={{ color: 'var(--muted)' }}>{transaction.reason}</span>} />
         </div>
 
-        {!approverUserId && (
+        {!approverUserId && !isDemoMode() && (
           <p className="text-xs p-3 rounded-lg" style={{ background: 'rgba(242,185,102,0.1)', color: 'var(--gold)', border: '1px solid rgba(242,185,102,0.2)' }}>
             No approver user ID configured. Open Settings and add your User ID.
           </p>
@@ -83,7 +83,7 @@ export function ApproveModal({ transaction, action, approverUserId, onConfirm, o
           </button>
           <button
             onClick={handleConfirm}
-            disabled={loading || !approverUserId}
+            disabled={loading || (!approverUserId && !isDemoMode())}
             className="flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50"
             style={{
               background: isApprove ? 'var(--green)' : 'var(--red)',

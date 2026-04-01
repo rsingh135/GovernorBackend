@@ -75,10 +75,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           />
           <Field
             label="Agent API Key"
-            hint="Used to authenticate requests for transactions and webhooks"
+            hint={'Tip: enter "governor-demo" to explore with sample data — no backend needed'}
             value={apiKey}
             onChange={setApiKey}
-            placeholder="agp_..."
+            placeholder='agp_... or "governor-demo"'
             type="password"
           />
           <Field

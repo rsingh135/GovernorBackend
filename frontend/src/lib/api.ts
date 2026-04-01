@@ -1,8 +1,9 @@
 import { ListAgentsResponse, ListTransactionsResponse, Transaction } from './types';
+import { DEMO_KEY, filterAgents, filterTransactions, mockApprove, mockDeny } from './mockData';
 
 const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
-function getSettings() {
+export function getSettings() {
   if (typeof window === 'undefined') return { apiKey: '', approverUserId: '', apiBaseUrl: DEFAULT_BASE_URL };
   try {
     const raw = localStorage.getItem('governor_settings');
@@ -11,6 +12,10 @@ function getSettings() {
   } catch {
     return { apiKey: '', approverUserId: '', apiBaseUrl: DEFAULT_BASE_URL };
   }
+}
+
+export function isDemoMode(): boolean {
+  return getSettings().apiKey === DEMO_KEY;
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}, authenticated = false): Promise<T> {
@@ -35,6 +40,8 @@ async function apiFetch<T>(path: string, options: RequestInit = {}, authenticate
 }
 
 export async function getAgents(params?: { user_id?: string; status?: string; limit?: number; offset?: number }): Promise<ListAgentsResponse> {
+  if (isDemoMode()) return new Promise(r => setTimeout(() => r(filterAgents(params)), 200));
+
   const q = new URLSearchParams();
   if (params?.user_id) q.set('user_id', params.user_id);
   if (params?.status) q.set('status', params.status);
@@ -51,6 +58,8 @@ export async function getTransactions(params?: {
   limit?: number;
   offset?: number;
 }): Promise<ListTransactionsResponse> {
+  if (isDemoMode()) return new Promise(r => setTimeout(() => r(filterTransactions(params)), 200));
+
   const q = new URLSearchParams();
   if (params?.status) q.set('status', params.status);
   if (params?.from_date) q.set('from_date', params.from_date);
@@ -61,21 +70,24 @@ export async function getTransactions(params?: {
   return apiFetch<ListTransactionsResponse>(`/transactions${qs}`, {}, true);
 }
 
-export async function approveTransaction(txnId: string, approverUserId: string): Promise<Transaction> {
+export async function approveTransaction(txnId: string, _approverUserId: string): Promise<Transaction> {
+  if (isDemoMode()) return new Promise(r => setTimeout(() => r(mockApprove(txnId)), 300));
   return apiFetch<Transaction>(`/transactions/${txnId}/approve`, {
     method: 'POST',
-    body: JSON.stringify({ approver_user_id: approverUserId }),
+    body: JSON.stringify({ approver_user_id: _approverUserId }),
   });
 }
 
-export async function denyTransaction(txnId: string, approverUserId: string): Promise<Transaction> {
+export async function denyTransaction(txnId: string, _approverUserId: string): Promise<Transaction> {
+  if (isDemoMode()) return new Promise(r => setTimeout(() => r(mockDeny(txnId)), 300));
   return apiFetch<Transaction>(`/transactions/${txnId}/deny`, {
     method: 'POST',
-    body: JSON.stringify({ approver_user_id: approverUserId }),
+    body: JSON.stringify({ approver_user_id: _approverUserId }),
   });
 }
 
 export async function createAgent(body: { user_id: string; name: string }) {
+  if (isDemoMode()) throw new Error('Demo mode: agent creation disabled');
   return apiFetch('/agents', { method: 'POST', body: JSON.stringify(body) });
 }
 
@@ -85,13 +97,10 @@ export async function createPolicy(body: {
   allowed_vendors: string[];
   require_approval_above_cents: number;
 }) {
+  if (isDemoMode()) throw new Error('Demo mode: policy creation disabled');
   return apiFetch('/policies', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-export function getSettings_public() {
-  return getSettings();
 }
