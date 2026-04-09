@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f4efe9;
+  --bg-alt: #eee8e0;
+  --bg-card: #ebe4db;
+  --bg-card-hover: #e5ddd3;
+  --bg-input: #f9f6f2;
+  --black: #1a1a1a;
+  --dark: #2c2c2c;
+  --mid: #6b6560;
+  --muted: #9a938c;
+  --light: #c4bdb5;
+  --border: rgba(0,0,0,0.08);
+  --border-hover: rgba(0,0,0,0.14);
+  --red: #c0392b;
+  --red-soft: rgba(192, 57, 43, 0.07);
+  --red-border: rgba(192, 57, 43, 0.15);
+  --green: #2d7a4f;
+  --green-soft: rgba(45, 122, 79, 0.08);
+  --green-border: rgba(45, 122, 79, 0.18);
+  --gold: #9a7b4f;
+  --gold-soft: rgba(154, 123, 79, 0.08);
+  --gold-border: rgba(154, 123, 79, 0.18);
+  --font-serif: 'EB Garamond', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--black);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+*:focus-visible {
+  outline: 2px solid var(--black);
+  outline-offset: 2px;
+}
+
+/* Page enter animation */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.page-enter {
+  animation: pageIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Fade up for cards/rows */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up {
+  animation: fadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fade-up-d1 { animation-delay: 0.06s; }
+.fade-up-d2 { animation-delay: 0.12s; }
+.fade-up-d3 { animation-delay: 0.18s; }
+.fade-up-d4 { animation-delay: 0.24s; }
+
+/* Scale in */
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.scale-in {
+  animation: scaleIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Slide in from left */
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.slide-left {
+  animation: slideLeft 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Row stagger animation */
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.row-animate {
+  animation: rowIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Subtle pulse for pending items */
+@keyframes subtlePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.pulse-subtle {
+  animation: subtlePulse 2.5s ease-in-out infinite;
+}
+
+/* Skeleton loader */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover) 37%, var(--bg-card) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Modal backdrop animation */
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-backdrop {
+  animation: backdropIn 0.2s ease both;
+}
+
+.modal-content {
+  animation: modalIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.05s;
+}
+
+/* Button hover lift */
+.btn-lift {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease;
+}
+
+.btn-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.btn-lift:active {
+  transform: translateY(0);
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.35s ease,
+              box-shadow 0.35s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+}
+
+/* Table row hover */
+.table-row-hover {
+  transition: background 0.15s ease;
+}
+
+.table-row-hover:hover {
+  background: var(--bg-card) !important;
+}
+
+/* Nav item transitions */
+.nav-item {
+  transition: background 0.2s ease, color 0.2s ease;
+  position: relative;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 2px;
+  height: 16px;
+  background: var(--black);
+  border-radius: 1px;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-item-active::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* Counter badge animation */
+@keyframes badgePop {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.badge-pop {
+  animation: badgePop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar-desktop { display: none; }
+}
+
+/* Print-friendly */
+@media print {
+  .no-print { display: none !important; }
+}
